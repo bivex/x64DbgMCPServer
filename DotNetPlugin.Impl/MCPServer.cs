@@ -135,334 +135,404 @@ class SimpleMcpServer {
     static bool pDebug = false;
     private static readonly Dictionary<string, StreamWriter> _sseSessions = new Dictionary<string, StreamWriter>();
 
-    private async Task OnRequest ( HttpListenerContext ctx )
+    private async Task OnRequest(HttpListenerContext ctx)
     {
-        if ( pDebug )
+        if (pDebug)
         {
-            Console.WriteLine ( "=== Incoming Request ===" );
-            Console.WriteLine ( $"Method: {ctx.Request.HttpMethod}" );
-            Console.WriteLine ( $"URL: {ctx.Request.Url}" );
-            Console.WriteLine ( $"Headers:" );
-            foreach ( string key in ctx.Request.Headers )
-            {
-                Console.WriteLine ( $"  {key}: {ctx.Request.Headers[key]}" );
-            }
-            Console.WriteLine ( "=========================" );
+            LogRequest(ctx);
         }
-        string requestBody = null;
 
-        if ( ctx.Request.HttpMethod == "POST" )
+        try
         {
-            var path = ctx.Request.Url.AbsolutePath.ToLowerInvariant();
-
-            if ( path.StartsWith ( "/message" ) )
+            switch (ctx.Request.HttpMethod)
             {
-                var sessionId = ctx.Request.QueryString["sessionId"];
-                bool sessionIsValid = false;
-                lock ( _sseSessions )
-                {
-                    sessionIsValid = !string.IsNullOrWhiteSpace ( sessionId ) && _sseSessions.ContainsKey ( sessionId );
-                }
-
-                if ( !sessionIsValid )
-                {
-                    Console.WriteLine ( $"Bad request for /message: Invalid or missing sessionId '{sessionId}'" );
-                    ctx.Response.StatusCode = 400;
-                    byte[] badReqBuffer = Encoding.UTF8.GetBytes ( "Invalid or missing sessionId." );
-                    ctx.Response.ContentType = "text/plain; charset=utf-8";
-                    ctx.Response.ContentLength64 = badReqBuffer.Length;
-                    try
-                    {
-                        ctx.Response.OutputStream.Write ( badReqBuffer, 0, badReqBuffer.Length );
-                    }
-                    catch ( Exception writeEx )
-                    {
-                        Console.WriteLine ( $"Error writing 400 response: {writeEx.Message}" );
-                    }
-                    finally
-                    {
-                        ctx.Response.OutputStream.Close();
-                    }
-                    return;
-                }
-
-                if ( ctx.Request.HasEntityBody )
-                {
-                    using ( var reader = new StreamReader ( ctx.Request.InputStream, ctx.Request.ContentEncoding ) )
-                    {
-                        requestBody = await reader.ReadToEndAsync();
-                        if ( pDebug )
-                        {
-                            Debug.WriteLine ( "jsonBody:" + requestBody );
-                        }
-                    }
-                }
-                else
-                {
-                    if ( pDebug )
-                    {
-                        Console.WriteLine ( "No body." );
-                    }
-                }
-
-                try
-                {
-                    ctx.Response.StatusCode = 202;
-                    ctx.Response.ContentType = "text/plain; charset=utf-8";
-                    byte[] buffer = Encoding.UTF8.GetBytes ( "Accepted" );
-                    ctx.Response.ContentLength64 = buffer.Length;
-                    await ctx.Response.OutputStream.WriteAsync ( buffer, 0, buffer.Length );
-                    await ctx.Response.OutputStream.FlushAsync();
-                }
-                catch ( Exception acceptEx )
-                {
-                    Console.WriteLine ( $"Error sending 202 Accepted: {acceptEx.Message}" );
-                    CleanupSseSession ( sessionId );
-                    return;
-                }
-
-                Dictionary<string, object> json = null;
-                object rpcId = null;
-                string method = null;
-
-                try
-                {
-                    if ( string.IsNullOrWhiteSpace ( requestBody ) )
-                    {
-                        throw new JsonException ( "Request body is empty or whitespace." );
-                    }
-                    json = _jsonSerializer.Deserialize<Dictionary<string, object>> ( requestBody );
-
-                    if ( json == null )
-                    {
-                        throw new JsonException ( "Failed to deserialize JSON body." );
-                    }
-
-                    json.TryGetValue ( "id", out rpcId );
-                    if ( !json.TryGetValue ( "method", out object methodObj ) || ! ( methodObj is string ) )
-                    {
-                        var errorMsg = "Invalid JSON RPC: Missing or invalid 'method'.";
-                        Console.WriteLine ( $"Error processing request for session {sessionId}: {errorMsg}" );
-                        if ( rpcId != null )
-                        {
-                            SendSseError ( sessionId, rpcId, -32600, errorMsg );
-                        }
-                        return;
-                    }
-                    method = ( string ) methodObj;
-
-                    if ( pDebug )
-                    {
-                        Console.WriteLine ( $"RPC Call | Session: {sessionId}, ID: {rpcId}, Method: {method}" );
-                    }
-
-                    if ( method == "rpc.discover" )
-                    {
-                        HandleToolsList ( sessionId, rpcId );
-                    }
-                    else if ( method == "initialize" )
-                    {
-                        HandleInitialize ( sessionId, rpcId, json );
-                    }
-                    else if ( method == "notifications/initialized" )
-                    {
-                        if ( pDebug )
-                        {
-                            Console.WriteLine ( $"Notification 'initialized' received for session {sessionId}." );
-                        }
-                    }
-                    else if ( method == "tools/list" )
-                    {
-                        HandleToolsList ( sessionId, rpcId );
-                    }
-                    else if ( method == "tools/call" )
-                    {
-                        HandleToolCall ( sessionId, rpcId, json );
-                    }
-                    else if ( method == "prompts/list" )
-                    {
-                        HandlePromptsList ( sessionId, rpcId );
-                    }
-                    else if ( method == "prompts/get" )
-                    {
-                        HandlePromptsGet ( sessionId, rpcId, json );
-                    }
-                    else if ( method == "resources/list" )
-                    {
-                        HandleResourcesList ( sessionId, rpcId );
-                    }
-                    else if ( _commands.TryGetValue ( method, out var methodInfo ) )
-                    {
-                        Console.WriteLine (
-                            $"Warning: Received legacy-style direct command call '{method}' for session {sessionId}. Consider using 'tools/call'." );
-                        SendSseError ( sessionId, rpcId, -32601,
-                                       $"Direct command calls are deprecated. Use 'tools/call' for method '{method}'." );
-                    }
-                    else
-                    {
-                        Console.WriteLine ( $"Unknown method '{method}' received for session {sessionId}" );
-                        SendSseError ( sessionId, rpcId, -32601, $"Method not found: {method}" );
-                    }
-                }
-                catch ( JsonException jsonEx )
-                {
-                    Console.WriteLine ( $"JSON Error processing request for session {sessionId}: {jsonEx.Message}" );
-                    SendSseError ( sessionId, rpcId, -32700, $"Parse error: Invalid JSON received. ({jsonEx.Message})" );
-                }
-                catch ( Exception ex )
-                {
-                    Console.WriteLine ( $"Error processing method '{method ?? "unknown"}' for session {sessionId}: {ex}" );
-                    SendSseError ( sessionId, rpcId, -32603, $"Internal error processing method '{method ?? "unknown"}': {ex.Message}" );
-                }
-            }
-            else
-            {
-                Console.WriteLine ( $"POST request to unknown path: {path}" );
-                ctx.Response.StatusCode = 404;
-                ctx.Response.OutputStream.Close();
+                case "POST":
+                    await HandlePostRequest(ctx);
+                    break;
+                case "GET":
+                    await HandleGetRequest(ctx);
+                    break;
+                default:
+                    HandleUnsupportedMethod(ctx);
+                    break;
             }
         }
-        else if ( ctx.Request.HttpMethod == "GET" )
+        catch (Exception ex)
         {
-            var path = ctx.Request.Url.AbsolutePath.ToLowerInvariant();
-
-            if ( path.EndsWith ( "/sse/" ) || path.EndsWith ( "/sse" ) )
+            Console.WriteLine($"[FATAL] Unhandled exception in OnRequest: {ex}");
+            try
             {
-                ctx.Response.ContentType = "text/event-stream; charset=utf-8";
-                ctx.Response.StatusCode = 200;
-                ctx.Response.SendChunked = true;
-                ctx.Response.KeepAlive = true;
-                ctx.Response.Headers.Add ( "Cache-Control", "no-cache" );
-                ctx.Response.Headers.Add ( "X-Accel-Buffering", "no" );
-
-                string sessionId = "";
-                try
+                if (ctx.Response.OutputStream.CanWrite)
                 {
-                    using ( var rng = RandomNumberGenerator.Create() )
-                    {
-                        byte[] randomBytes = new byte[16];
-                        rng.GetBytes ( randomBytes );
-                        sessionId = Convert.ToBase64String ( randomBytes ).TrimEnd ( '=' ).Replace ( '+', '-' ).Replace ( '/', '_' );
-                    }
-
-                    var writer = new StreamWriter ( ctx.Response.OutputStream, new UTF8Encoding ( false ), 1024, leaveOpen: true )
-                    {
-                        AutoFlush = true
-                    };
-
-                    bool added = false;
-                    lock ( _sseSessions )
-                    {
-                        if ( !_sseSessions.ContainsKey ( sessionId ) )
-                        {
-                            _sseSessions[sessionId] = writer;
-                            added = true;
-                        }
-                        else
-                        {
-                            Console.WriteLine ( $"WARNING: Session ID collision detected for {sessionId}" );
-                        }
-                    }
-
-                    if ( added )
-                    {
-                        Console.WriteLine ( $"SSE session started: {sessionId}" );
-                        string messagePath = $"/message?sessionId={sessionId}";
-                        await writer.WriteAsync ( $"event: endpoint\n" );
-                        await writer.WriteAsync ( $"data: {messagePath}\n\n" );
-                    }
-                    else
-                    {
-                        ctx.Response.StatusCode = 500;
-                        writer?.Dispose();
-                        ctx.Response.OutputStream.Close();
-                    }
-                }
-                catch ( Exception ex )
-                {
-                    Console.WriteLine ( $"Error establishing SSE session or sending handshake: {ex.Message}" );
-                    try
-                    {
-                        if ( ctx.Response.StatusCode == 200 )
-                        {
-                            ctx.Response.StatusCode = 500;
-                        }
-                    }
-                    catch ( Exception statusEx )
-                    {
-                        Console.WriteLine ( $"Could not set error status code for SSE setup failure: {statusEx.Message}" );
-                    }
-
-                    try
-                    {
-                        ctx.Response.OutputStream.Close();
-                    }
-                    catch { }
-                    if ( !string.IsNullOrEmpty ( sessionId ) )
-                    {
-                        CleanupSseSession ( sessionId );
-                    }
-                }
-            }
-            else if ( path.EndsWith ( "/discover" ) || path.EndsWith ( "/mcp/" ) )
-            {
-                Console.WriteLine ( "Handling legacy GET /discover or /mcp/" );
-                var toolList = new List<object>();
-                lock ( _commands )
-                {
-                    foreach ( var cmd in _commands )
-                    {
-                        var methodInfo = cmd.Value;
-                        var attribute = methodInfo.GetCustomAttribute<CommandAttribute>();
-                        if ( attribute != null && !attribute.X64DbgOnly
-                                && ( !attribute.DebugOnly /* || Debugger.IsAttached *//* || Add Bridge checks if needed */ ) )
-                        {
-                            toolList.Add ( new
-                            {
-                                name = cmd.Key,
-                                parameters = methodInfo.GetParameters().Select ( p => $"{p.ParameterType.Name}" ).ToArray()
-                            } );
-                        }
-                    }
-                }
-
-                var legacyResponse = new
-                {
-                    jsonrpc = "2.0",
-                    id = ( string ) null,
-                    result = toolList
-                };
-                var json = _jsonSerializer.Serialize ( legacyResponse );
-                var buffer = Encoding.UTF8.GetBytes ( json );
-                ctx.Response.ContentType = "application/json; charset=utf-8";
-                ctx.Response.ContentLength64 = buffer.Length;
-                try
-                {
-                    await ctx.Response.OutputStream.WriteAsync ( buffer, 0, buffer.Length );
-                }
-                catch ( Exception writeEx )
-                {
-                    Console.WriteLine ( $"Error writing discover response: {writeEx.Message}" );
-                }
-                finally
-                {
+                    ctx.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                     ctx.Response.OutputStream.Close();
                 }
             }
-            else
+            catch (Exception closeEx)
             {
-                Console.WriteLine ( $"GET request to unknown path: {path}" );
-                ctx.Response.StatusCode = 404;
-                ctx.Response.OutputStream.Close();
+                Console.WriteLine($"[FATAL] Could not close response stream after unhandled exception: {closeEx.Message}");
             }
+        }
+    }
+
+    private void LogRequest(HttpListenerContext ctx)
+    {
+        Console.WriteLine("=== Incoming Request ===");
+        Console.WriteLine($"Method: {ctx.Request.HttpMethod}");
+        Console.WriteLine($"URL: {ctx.Request.Url}");
+        Console.WriteLine("Headers:");
+        foreach (string key in ctx.Request.Headers)
+        {
+            Console.WriteLine($"  {key}: {ctx.Request.Headers[key]}");
+        }
+        Console.WriteLine("=========================");
+    }
+
+    private async Task HandlePostRequest(HttpListenerContext ctx)
+    {
+        var path = ctx.Request.Url.AbsolutePath.ToLowerInvariant();
+        if (path.StartsWith("/message"))
+        {
+            await HandleMessageRequest(ctx);
         }
         else
         {
-            Console.WriteLine ( $"Unsupported HTTP method: {ctx.Request.HttpMethod}" );
-            ctx.Response.StatusCode = 405;
-            ctx.Response.AddHeader ( "Allow", "GET, POST" );
+            SendNotFound(ctx, $"POST request to unknown path: {path}");
+        }
+    }
+
+    private async Task HandleGetRequest(HttpListenerContext ctx)
+    {
+        var path = ctx.Request.Url.AbsolutePath.ToLowerInvariant();
+        if (path.EndsWith("/sse/") || path.EndsWith("/sse"))
+        {
+            await HandleSseSetupRequest(ctx);
+        }
+        else if (path.EndsWith("/discover") || path.EndsWith("/mcp/"))
+        {
+            await HandleLegacyDiscoverRequest(ctx);
+        }
+        else
+        {
+            SendNotFound(ctx, $"GET request to unknown path: {path}");
+        }
+    }
+
+    private async Task HandleMessageRequest(HttpListenerContext ctx)
+    {
+        var sessionId = ctx.Request.QueryString["sessionId"];
+        if (!IsSseSessionValid(sessionId))
+        {
+            await SendBadRequestAsync(ctx, $"Invalid or missing sessionId '{sessionId}'");
+            return;
+        }
+
+        string requestBody = await ReadRequestBodyAsync(ctx);
+
+        try
+        {
+            await SendAcceptedResponseAsync(ctx);
+        }
+        catch (Exception acceptEx)
+        {
+            Console.WriteLine($"Error sending 202 Accepted: {acceptEx.Message}");
+            CleanupSseSession(sessionId);
+            return;
+        }
+
+        ProcessRpcRequest(sessionId, requestBody);
+    }
+
+    private bool IsSseSessionValid(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return false;
+        }
+        lock (_sseSessions)
+        {
+            return _sseSessions.ContainsKey(sessionId);
+        }
+    }
+
+    private async Task SendBadRequestAsync(HttpListenerContext ctx, string logMessage)
+    {
+        Console.WriteLine($"Bad request for /message: {logMessage}");
+        ctx.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+        byte[] badReqBuffer = Encoding.UTF8.GetBytes("Invalid or missing sessionId.");
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        ctx.Response.ContentLength64 = badReqBuffer.Length;
+        try
+        {
+            await ctx.Response.OutputStream.WriteAsync(badReqBuffer, 0, badReqBuffer.Length);
+        }
+        catch (Exception writeEx)
+        {
+            Console.WriteLine($"Error writing 400 response: {writeEx.Message}");
+        }
+        finally
+        {
             ctx.Response.OutputStream.Close();
         }
+    }
+    
+    private async Task<string> ReadRequestBodyAsync(HttpListenerContext ctx)
+    {
+        if (!ctx.Request.HasEntityBody)
+        {
+            if (pDebug)
+            {
+                Console.WriteLine("No body.");
+            }
+            return null;
+        }
+        using (var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding))
+        {
+            var requestBody = await reader.ReadToEndAsync();
+            if (pDebug)
+            {
+                Debug.WriteLine("jsonBody:" + requestBody);
+            }
+            return requestBody;
+        }
+    }
+
+    private async Task SendAcceptedResponseAsync(HttpListenerContext ctx)
+    {
+        ctx.Response.StatusCode = (int)HttpStatusCode.Accepted;
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        byte[] buffer = Encoding.UTF8.GetBytes("Accepted");
+        ctx.Response.ContentLength64 = buffer.Length;
+        await ctx.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+        await ctx.Response.OutputStream.FlushAsync();
+    }
+
+    private void ProcessRpcRequest(string sessionId, string requestBody)
+    {
+        object rpcId = null;
+        string method = null;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(requestBody))
+            {
+                throw new JsonException("Request body is empty or whitespace.");
+            }
+            var json = _jsonSerializer.Deserialize<Dictionary<string, object>>(requestBody);
+
+            if (json == null)
+            {
+                throw new JsonException("Failed to deserialize JSON body.");
+            }
+
+            json.TryGetValue("id", out rpcId);
+            if (!json.TryGetValue("method", out object methodObj) || !(methodObj is string) || string.IsNullOrWhiteSpace((string)methodObj))
+            {
+                var errorMsg = "Invalid JSON RPC: Missing or invalid 'method'.";
+                Console.WriteLine($"Error processing request for session {sessionId}: {errorMsg}");
+                if (rpcId != null)
+                {
+                    SendSseError(sessionId, rpcId, -32600, errorMsg);
+                }
+                return;
+            }
+            method = (string)methodObj;
+
+            DispatchRpcMethod(sessionId, rpcId, method, json);
+        }
+        catch (JsonException jsonEx)
+        {
+            Console.WriteLine($"JSON Error processing request for session {sessionId}: {jsonEx.Message}");
+            SendSseError(sessionId, rpcId, -32700, $"Parse error: Invalid JSON received. ({jsonEx.Message})");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing method '{method ?? "unknown"}' for session {sessionId}: {ex}");
+            SendSseError(sessionId, rpcId, -32603, $"Internal error processing method '{method ?? "unknown"}': {ex.Message}");
+        }
+    }
+    
+    private void DispatchRpcMethod(string sessionId, object rpcId, string method, Dictionary<string, object> json)
+    {
+        if (pDebug)
+        {
+            Console.WriteLine($"RPC Call | Session: {sessionId}, ID: {rpcId}, Method: {method}");
+        }
+
+        switch (method)
+        {
+            case "rpc.discover":
+            case "tools/list":
+                HandleToolsList(sessionId, rpcId);
+                break;
+            case "initialize":
+                HandleInitialize(sessionId, rpcId, json);
+                break;
+            case "notifications/initialized":
+                if (pDebug)
+                {
+                    Console.WriteLine($"Notification 'initialized' received for session {sessionId}.");
+                }
+                break;
+            case "tools/call":
+                HandleToolCall(sessionId, rpcId, json);
+                break;
+            case "prompts/list":
+                HandlePromptsList(sessionId, rpcId);
+                break;
+            case "prompts/get":
+                HandlePromptsGet(sessionId, rpcId, json);
+                break;
+            case "resources/list":
+                HandleResourcesList(sessionId, rpcId);
+                break;
+            default:
+                if (_commands.ContainsKey(method))
+                {
+                    Console.WriteLine($"Warning: Received legacy-style direct command call '{method}' for session {sessionId}. Consider using 'tools/call'.");
+                    SendSseError(sessionId, rpcId, -32601, $"Direct command calls are deprecated. Use 'tools/call' for method '{method}'.");
+                }
+                else
+                {
+                    Console.WriteLine($"Unknown method '{method}' received for session {sessionId}");
+                    SendSseError(sessionId, rpcId, -32601, $"Method not found: {method}");
+                }
+                break;
+        }
+    }
+
+    private async Task HandleSseSetupRequest(HttpListenerContext ctx)
+    {
+        ctx.Response.ContentType = "text/event-stream; charset=utf-8";
+        ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+        ctx.Response.SendChunked = true;
+        ctx.Response.KeepAlive = true;
+        ctx.Response.Headers.Add("Cache-Control", "no-cache");
+        ctx.Response.Headers.Add("X-Accel-Buffering", "no");
+
+        string sessionId = "";
+        try
+        {
+            sessionId = GenerateSessionId();
+            var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false), 1024, leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+
+            if (RegisterSseSession(sessionId, writer))
+            {
+                Console.WriteLine($"SSE session started: {sessionId}");
+                string messagePath = $"/message?sessionId={sessionId}";
+                await writer.WriteAsync($"event: endpoint\n");
+                await writer.WriteAsync($"data: {messagePath}\n\n");
+            }
+            else
+            {
+                // This case is for a highly unlikely session ID collision
+                ctx.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                writer?.Dispose();
+                ctx.Response.OutputStream.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error establishing SSE session or sending handshake: {ex.Message}");
+            if (ctx.Response.StatusCode == (int)HttpStatusCode.OK)
+            {
+                ctx.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+            }
+            ctx.Response.OutputStream.Close();
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                CleanupSseSession(sessionId);
+            }
+        }
+    }
+
+    private string GenerateSessionId()
+    {
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            byte[] randomBytes = new byte[16];
+            rng.GetBytes(randomBytes);
+            return Convert.ToBase64String(randomBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+    }
+
+    private bool RegisterSseSession(string sessionId, StreamWriter writer)
+    {
+        lock (_sseSessions)
+        {
+            if (_sseSessions.ContainsKey(sessionId))
+            {
+                Console.WriteLine($"WARNING: Session ID collision detected for {sessionId}");
+                return false;
+            }
+            _sseSessions[sessionId] = writer;
+            return true;
+        }
+    }
+
+    private async Task HandleLegacyDiscoverRequest(HttpListenerContext ctx)
+    {
+        Console.WriteLine("Handling legacy GET /discover or /mcp/");
+        var toolList = new List<object>();
+        lock (_commands)
+        {
+            foreach (var cmd in _commands)
+            {
+                var methodInfo = cmd.Value;
+                var attribute = methodInfo.GetCustomAttribute<CommandAttribute>();
+                if (attribute != null && !attribute.X64DbgOnly && !attribute.DebugOnly)
+                {
+                    toolList.Add(new
+                    {
+                        name = cmd.Key,
+                        parameters = methodInfo.GetParameters().Select(p => p.ParameterType.Name).ToArray()
+                    });
+                }
+            }
+        }
+
+        var legacyResponse = new
+        {
+            jsonrpc = "2.0",
+            id = (string)null,
+            result = toolList
+        };
+
+        var json = _jsonSerializer.Serialize(legacyResponse);
+        var buffer = Encoding.UTF8.GetBytes(json);
+        ctx.Response.ContentType = "application/json; charset=utf-8";
+        ctx.Response.ContentLength64 = buffer.Length;
+
+        try
+        {
+            await ctx.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+        }
+        catch (Exception writeEx)
+        {
+            Console.WriteLine($"Error writing discover response: {writeEx.Message}");
+        }
+        finally
+        {
+            ctx.Response.OutputStream.Close();
+        }
+    }
+    
+    private void SendNotFound(HttpListenerContext ctx, string logMessage)
+    {
+        Console.WriteLine(logMessage);
+        ctx.Response.StatusCode = (int)HttpStatusCode.NotFound;
+        ctx.Response.OutputStream.Close();
+    }
+    
+    private void HandleUnsupportedMethod(HttpListenerContext ctx)
+    {
+        Console.WriteLine($"Unsupported HTTP method: {ctx.Request.HttpMethod}");
+        ctx.Response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+        ctx.Response.AddHeader("Allow", "GET, POST");
+        ctx.Response.OutputStream.Close();
     }
 
     private void HandleInitialize ( string sessionId, object id, Dictionary<string, object> json )

@@ -312,7 +312,7 @@ partial class Plugin {
         }
     }
 
-    //[Command("WriteMemory", DebugOnly = true, MCPOnly = true)]
+    //[Command("WriteMemory", DebugOnly = false)]
     //public static bool WriteMemory(string[] args)
     //{
     //    if (args.Length < 2)
@@ -1061,12 +1061,26 @@ partial class Plugin {
         public nuint FrameSize;     // Calculated size (approx)
     }
 
-    public static List<CallStackFrameInfo> GetCallStackFunc ( int maxFrames = 32 )
+    /// <summary>
+    /// Represents the resolved symbols for a memory address.
+    /// </summary>
+    public class AddressSymbols {
+        public string Module { get; set; } = "N/A";
+        public string Label { get; set; } = "N/A";
+        public string Comment { get; set; } = "";
+    }
+
+    /// <summary>
+    /// Walks the current call stack by traversing the RBP chain.
+    /// This is not always reliable but works for standard x64 calling conventions.
+    /// </summary>
+    /// <param name="maxFrames">The maximum number of frames to walk.</param>
+    /// <returns>An enumerable of <see cref="CallStackFrameInfo"/> for each valid frame found.</returns>
+    public static IEnumerable<CallStackFrameInfo> WalkStackFrames ( int maxFrames = 32 )
     {
-        var callstack = new List<CallStackFrameInfo>();
         if ( !TryGetInitialStackPointers ( out nuint rbp, out nuint rsp ) )
         {
-            return callstack;
+            yield break; // Stop iteration if initial pointers are invalid
         }
 
         nuint currentRbp = rbp;
@@ -1076,28 +1090,28 @@ partial class Plugin {
         {
             if ( !TryGetFrameInfo ( currentRbp, out nuint returnAddress, out nuint nextRbp ) )
             {
-                break;
+                break; // Stop if we can't read frame info (end of stack or invalid memory)
             }
 
             nuint frameSize = CalculateFrameSize ( currentRbp, previousRbp );
-            callstack.Add ( new CallStackFrameInfo
+
+            yield return new CallStackFrameInfo
             {
                 FrameAddress = currentRbp,
                 ReturnAddress = returnAddress,
                 FrameSize = frameSize
-            } );
+            };
 
             previousRbp = currentRbp;
             currentRbp = nextRbp;
 
             if ( !IsNextRbpValid ( currentRbp, previousRbp, rsp ) )
             {
-                break;
+                break; // Stop if the next frame pointer is invalid
             }
         }
-
-        return callstack;
     }
+
 
     private static bool TryGetInitialStackPointers ( out nuint rbp, out nuint rsp )
     {
@@ -1173,127 +1187,120 @@ partial class Plugin {
                MCPCmdDescription = "Example: GetCallStack\r\nExample: GetCallStack, maxFrames=32" )]
     public static string GetCallStack ( int maxFrames = 32 )
     {
-        // Define buffer sizes matching C++ MAX_ defines
-        const int MAX_MODULE_SIZE_BUFF = 256;
-        const int MAX_LABEL_SIZE_BUFF = 256;
-        const int MAX_COMMENT_SIZE_BUFF = 512;
-
         try
         {
-            var callstackFrames = GetCallStackFunc ( maxFrames ); // This still returns List<CallStackFrameInfo>
+            var callstackFrames = WalkStackFrames ( maxFrames ).ToList(); // Eagerly evaluate for count
 
             if ( callstackFrames.Count == 0 )
-            { return "[GetCallStack] Call stack could not be retrieved (check RBP validity or use debugger UI)."; }
+            {
+                return "[GetCallStack] Call stack could not be retrieved (check RBP validity or use debugger UI).";
+            }
 
             var output = new StringBuilder();
             output.AppendLine ( $"[GetCallStack] Retrieved {callstackFrames.Count} frames (RBP walk, may be inaccurate):" );
             output.AppendLine ( $"{"Frame",-5} {"Frame Addr",-18} {"Return Addr",-18} {"Size",-10} {"Module",-25} {"Label Symbol",-40} {"Comment"}" );
             output.AppendLine ( new string ( '-', 130 ) );
 
-            // Allocate native buffers ONCE outside the loop if possible,
-            // but since they are modified by the native call, it might be safer
-            // to allocate/free them inside the loop if issues arise.
-            // Let's try allocating inside for safety with ref struct modification.
-
             for ( int i = 0; i < callstackFrames.Count; i++ )
             {
                 var frame = callstackFrames[i];
-                string moduleStr = "Undefined";
-                string labelStr = "Undefined";
-                string commentStr = "";
-
-                // --- Manual Marshalling Setup ---
-                IntPtr ptrModule = IntPtr.Zero;
-                IntPtr ptrLabel = IntPtr.Zero;
-                IntPtr ptrComment = IntPtr.Zero;
-                BRIDGE_ADDRINFO_NATIVE addrInfo = new BRIDGE_ADDRINFO_NATIVE(); // Must be NATIVE struct
-
-                try // Use try/finally to guarantee freeing allocated memory
-                {
-                    // 1. Allocate native buffers
-                    ptrModule = Marshal.AllocHGlobal ( MAX_MODULE_SIZE_BUFF );
-                    ptrLabel = Marshal.AllocHGlobal ( MAX_LABEL_SIZE_BUFF );
-                    ptrComment = Marshal.AllocHGlobal ( MAX_COMMENT_SIZE_BUFF );
-
-                    // Initialize buffers slightly for safety (optional, helps debugging)
-                    Marshal.WriteByte ( ptrModule, 0, 0 );
-                    Marshal.WriteByte ( ptrLabel, 0, 0 );
-                    Marshal.WriteByte ( ptrComment, 0, 0 );
-
-                    // 2. Prepare the struct
-                    addrInfo.module = ptrModule;
-                    addrInfo.label = ptrLabel;
-                    addrInfo.comment = ptrComment;
-                    // Set flags for desired info
-                    addrInfo.flags = ADDRINFOFLAGS.flagmodule | ADDRINFOFLAGS.flaglabel | ADDRINFOFLAGS.flagcomment;
-
-                    // 3. Call the native function (use correct struct type)
-                    bool success = DbgAddrInfoGet ( frame.ReturnAddress, 0, ref addrInfo ); // Pass NATIVE struct
-
-                    // 4. Read results back from native buffers if call succeeded
-                    if ( success )
-                    {
-                        moduleStr = Marshal.PtrToStringAnsi ( addrInfo.module ) ?? "N/A"; // Read from buffer
-                        labelStr = Marshal.PtrToStringAnsi ( addrInfo.label ) ?? "N/A"; // Read from buffer
-
-                        string retrievedComment = Marshal.PtrToStringAnsi ( addrInfo.comment ) ?? "";
-                        if ( !string.IsNullOrEmpty ( retrievedComment ) )
-                        {
-                            // Handle auto-comment marker (\1) if present
-                            if ( retrievedComment.Length > 0 && retrievedComment[0] == '\x01' )
-                            {
-                                commentStr = retrievedComment.Length > 1 ? retrievedComment.Substring ( 1 ) : "";
-                            }
-                            else
-                            {
-                                commentStr = retrievedComment;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // Fallback if DbgAddrInfoGet fails
-                        var modInfoOnly = new BRIDGE_ADDRINFO_NATIVE { flags = ADDRINFOFLAGS.flagmodule, module = ptrModule };
-                        Marshal.WriteByte ( ptrModule, 0, 0 ); // Clear buffer before reuse
-                        if ( DbgAddrInfoGet ( frame.ReturnAddress, 0, ref modInfoOnly ) )
-                        {
-                            moduleStr = Marshal.PtrToStringAnsi ( modInfoOnly.module ) ?? "Lookup Failed";
-                        }
-                        else
-                        {
-                            moduleStr = "Lookup Failed";
-                        }
-                        labelStr = ""; // Clear label/comment if lookup failed
-                        commentStr = "";
-                    }
-                }
-                finally // 5. CRITICAL: Free allocated native memory
-                {
-                    if ( ptrModule != IntPtr.Zero )
-                    {
-                        Marshal.FreeHGlobal ( ptrModule );
-                    }
-                    if ( ptrLabel != IntPtr.Zero )
-                    {
-                        Marshal.FreeHGlobal ( ptrLabel );
-                    }
-                    if ( ptrComment != IntPtr.Zero )
-                    {
-                        Marshal.FreeHGlobal ( ptrComment );
-                    }
-                }
-                // --- End Manual Marshalling ---
-
+                TryResolveSymbols ( frame.ReturnAddress, out AddressSymbols symbols );
 
                 // Format the output line
-                output.AppendLine ( $"{$"[ {i}]",-5} 0x{frame.FrameAddress:X16} 0x{frame.ReturnAddress:X16} {($"0x {frame.FrameSize: X}"),-10} {moduleStr,-25} {labelStr,-40} {commentStr}" );
-            } // End for loop
+                output.AppendLine (
+                    $"{$"[ {i}]",-5} 0x{frame.FrameAddress:X16} 0x{frame.ReturnAddress:X16} {($"0x {frame.FrameSize: X}"),-10} {symbols.Module,-25} {symbols.Label,-40} {symbols.Comment}" );
+            }
 
             return output.ToString().TrimEnd(); // remove trailing newline
         }
         catch ( Exception ex )
         {
             return $"[GetCallStack] Error: {ex.Message}\n{ex.StackTrace}";
+        }
+    }
+
+    /// <summary>
+    /// Resolves symbol information (module, label, comment) for a given memory address.
+    /// This method encapsulates the P/Invoke complexity of calling DbgAddrInfoGet.
+    /// </summary>
+    /// <param name="address">The address to resolve.</param>
+    /// <param name="symbols">The resolved symbol information.</param>
+    /// <returns>True if any symbol information was retrieved, false otherwise.</returns>
+    private static bool TryResolveSymbols ( nuint address, out AddressSymbols symbols )
+    {
+        symbols = new AddressSymbols();
+        const int MAX_MODULE_SIZE_BUFF = 256;
+        const int MAX_LABEL_SIZE_BUFF = 256;
+        const int MAX_COMMENT_SIZE_BUFF = 512;
+
+        IntPtr ptrModule = IntPtr.Zero;
+        IntPtr ptrLabel = IntPtr.Zero;
+        IntPtr ptrComment = IntPtr.Zero;
+
+        try
+        {
+            ptrModule = Marshal.AllocHGlobal ( MAX_MODULE_SIZE_BUFF );
+            ptrLabel = Marshal.AllocHGlobal ( MAX_LABEL_SIZE_BUFF );
+            ptrComment = Marshal.AllocHGlobal ( MAX_COMMENT_SIZE_BUFF );
+
+            Marshal.WriteByte ( ptrModule, 0, 0 );
+            Marshal.WriteByte ( ptrLabel, 0, 0 );
+            Marshal.WriteByte ( ptrComment, 0, 0 );
+
+            var addrInfo = new BRIDGE_ADDRINFO_NATIVE
+            {
+                module = ptrModule,
+                label = ptrLabel,
+                comment = ptrComment,
+                flags = ADDRINFOFLAGS.flagmodule | ADDRINFOFLAGS.flaglabel | ADDRINFOFLAGS.flagcomment
+            };
+
+            if ( DbgAddrInfoGet ( address, 0, ref addrInfo ) )
+            {
+                symbols.Module = Marshal.PtrToStringAnsi ( addrInfo.module ) ?? "N/A";
+                symbols.Label = Marshal.PtrToStringAnsi ( addrInfo.label ) ?? "N/A";
+                string retrievedComment = Marshal.PtrToStringAnsi ( addrInfo.comment ) ?? "";
+
+                if ( !string.IsNullOrEmpty ( retrievedComment ) )
+                {
+                    // Handle auto-comment marker (\1)
+                    symbols.Comment = ( retrievedComment.Length > 0 && retrievedComment[0] == '\x01' )
+                                      ? retrievedComment.Substring ( 1 )
+                                      : retrievedComment;
+                }
+                return true;
+            }
+            else
+            {
+                // Fallback to get module info only if the full query fails
+                var modInfoOnly = new BRIDGE_ADDRINFO_NATIVE { flags = ADDRINFOFLAGS.flagmodule, module = ptrModule };
+                Marshal.WriteByte ( ptrModule, 0, 0 ); // Clear buffer before reuse
+
+                if ( DbgAddrInfoGet ( address, 0, ref modInfoOnly ) )
+                {
+                    symbols.Module = Marshal.PtrToStringAnsi ( modInfoOnly.module ) ?? "Lookup Failed";
+                }
+                else
+                {
+                    symbols.Module = "Lookup Failed";
+                }
+                return false;
+            }
+        }
+        finally
+        {
+            if ( ptrModule != IntPtr.Zero )
+            {
+                Marshal.FreeHGlobal ( ptrModule );
+            }
+            if ( ptrLabel != IntPtr.Zero )
+            {
+                Marshal.FreeHGlobal ( ptrLabel );
+            }
+            if ( ptrComment != IntPtr.Zero )
+            {
+                Marshal.FreeHGlobal ( ptrComment );
+            }
         }
     }
 
@@ -1624,7 +1631,7 @@ partial class Plugin {
                 continue;
             }
 
-            TryDumpInlineString ( writer, disasm );
+            bool foundInlineString = TryDumpInlineString ( writer, disasm );
 
             string bytes = BitConverter.ToString ( ReadMemory ( currentAddr, ( uint ) disasm.size ) );
             writer.WriteLine ( $"{currentAddr.ToPtrString()}  {bytes,-20}  {disasm.instruction}" );
@@ -1641,7 +1648,7 @@ partial class Plugin {
         writer.WriteLine ( "-----------------------------" );
     }
 
-    private static void TryDumpInlineString ( StreamWriter writer, Bridge.BASIC_INSTRUCTION_INFO disasm )
+    private static bool TryDumpInlineString ( StreamWriter writer, Bridge.BASIC_INSTRUCTION_INFO disasm )
     {
         nuint destAddr = 0;
         if ( disasm.type == 1 ) // value (immediate)
@@ -1659,8 +1666,10 @@ partial class Plugin {
             if ( !string.IsNullOrEmpty ( inlineString ) )
             {
                 writer.WriteLine ( $"    ; \"{inlineString}\"" );
+                return true;
             }
         }
+        return false;
     }
 
     private static void DumpFooter ( StreamWriter writer )
