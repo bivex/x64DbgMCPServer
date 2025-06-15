@@ -177,17 +177,17 @@ public class McpCommandDispatcher {
 
     public IReadOnlyDictionary<string, string> GetCommandList()
     {
-        var commandList = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        lock (_commands)
+        var commandList = new Dictionary<string, string> ( StringComparer.OrdinalIgnoreCase );
+        lock ( _commands )
         {
-            foreach (var command in _commands)
+            foreach ( var command in _commands )
             {
                 var attribute = command.Value.GetCustomAttribute<CommandAttribute>();
-                if (attribute != null)
+                if ( attribute != null )
                 {
-                    commandList[command.Key] = string.IsNullOrEmpty(attribute.MCPCmdDescription)
-                        ? $"Executes the {command.Key} command."
-                        : attribute.MCPCmdDescription;
+                    commandList[command.Key] = string.IsNullOrEmpty ( attribute.MCPCmdDescription )
+                                               ? $"Executes the {command.Key} command."
+                                               : attribute.MCPCmdDescription;
                 }
             }
         }
