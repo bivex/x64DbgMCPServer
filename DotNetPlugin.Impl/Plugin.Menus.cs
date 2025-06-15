@@ -7,8 +7,8 @@ using x64DbgMCPServer.Properties;
 
 namespace DotNetPlugin {
 partial class Plugin {
-    private McpCommandDispatcher _commandDispatcher;
-    private SimpleMcpServer _mcpServer;
+    private static McpCommandDispatcher s_commandDispatcher;
+    private static SimpleMcpServer s_mcpServer;
 
     protected override void SetupMenu ( Menus menus )
     {
@@ -27,30 +27,30 @@ partial class Plugin {
         //    .AddItem("sub menu entry2", menuItem => Console.WriteLine($"hEntry={menuItem.Id}"));
     }
 
-    private void ListAvailableCommands(MenuItem menuItem)
+    private void ListAvailableCommands ( MenuItem menuItem )
     {
-        if (_commandDispatcher == null)
+        if ( s_commandDispatcher == null )
         {
-            MessageBox.Show(HostWindow, "The MCP server is not running.", "MCP Server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show ( HostWindow, "The MCP server is not running.", "MCP Server", MessageBoxButtons.OK, MessageBoxIcon.Warning );
             return;
         }
 
-        var commands = _commandDispatcher.GetCommandList();
-        if (commands.Count == 0)
+        var commands = s_commandDispatcher.GetCommandList();
+        if ( commands.Count == 0 )
         {
-            MessageBox.Show(HostWindow, "No MCP commands are available.", "MCP Commands", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show ( HostWindow, "No MCP commands are available.", "MCP Commands", MessageBoxButtons.OK, MessageBoxIcon.Information );
             return;
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("Available MCP Commands:");
-        sb.AppendLine("=======================");
-        foreach (var command in commands)
+        sb.AppendLine ( "Available MCP Commands:" );
+        sb.AppendLine ( "=======================" );
+        foreach ( var command in commands )
         {
-            sb.AppendLine($"{command.Key}: {command.Value}");
+            sb.AppendLine ( $"{command.Key}: {command.Value}" );
         }
 
-        MessageBox.Show(HostWindow, sb.ToString(), "Available MCP Commands", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show ( HostWindow, sb.ToString(), "Available MCP Commands", MessageBoxButtons.OK, MessageBoxIcon.Information );
     }
 
     public void OnAboutMenuItem ( MenuItem menuItem )
@@ -78,32 +78,32 @@ partial class Plugin {
         }
         Bridge.DbgCmdExec ( "DumpModuleToFile" );
     }
-    public void StartMCPServer(MenuItem menuItem)
+    public void StartMCPServer ( MenuItem menuItem )
     {
-        if (_mcpServer == null)
+        if ( s_mcpServer == null )
         {
-            _mcpServer = new SimpleMcpServer(typeof(Plugin)); 
-            _commandDispatcher = _mcpServer.CommandDispatcher; 
-            _mcpServer.Start();
-            MessageBox.Show(HostWindow, "MCP Server started.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            s_mcpServer = new SimpleMcpServer ( typeof ( Plugin ) );
+            s_commandDispatcher = s_mcpServer.CommandDispatcher;
+            s_mcpServer.Start();
+            MessageBox.Show ( HostWindow, "MCP Server started.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information );
         }
         else
         {
-            MessageBox.Show(HostWindow, "MCP Server is already running.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show ( HostWindow, "MCP Server is already running.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information );
         }
     }
-    public void StopMCPServer(MenuItem menuItem)
+    public void StopMCPServer ( MenuItem menuItem )
     {
-        if (_mcpServer != null)
+        if ( s_mcpServer != null )
         {
-            _mcpServer.Stop();
-            _mcpServer = null;
-            _commandDispatcher = null;
-            MessageBox.Show(HostWindow, "MCP Server stopped.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            s_mcpServer.Stop();
+            s_mcpServer = null;
+            s_commandDispatcher = null;
+            MessageBox.Show ( HostWindow, "MCP Server stopped.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information );
         }
         else
         {
-            MessageBox.Show(HostWindow, "MCP Server is not running.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show ( HostWindow, "MCP Server is not running.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information );
         }
     }
 }
