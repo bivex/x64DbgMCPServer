@@ -21,12 +21,12 @@ class SimpleMcpServer {
     private readonly Dictionary<string, MethodInfo> _commands = new Dictionary<string, MethodInfo>
     ( StringComparer.OrdinalIgnoreCase );
     private readonly Type _targetType;
-    public bool IsActivelyDebugging = false;
-    public bool OutputPlugingDebugInformation = true;
+    internal bool IsActivelyDebugging = false;
+    internal bool OutputPlugingDebugInformation = true;
 
-    public McpCommandDispatcher CommandDispatcher => _commandDispatcher;
+    internal McpCommandDispatcher CommandDispatcher => _commandDispatcher;
 
-    public SimpleMcpServer ( Type commandSourceType )
+    internal SimpleMcpServer ( Type commandSourceType )
     {
         _targetType = commandSourceType;
         string IPAddress = "+";
@@ -71,7 +71,7 @@ class SimpleMcpServer {
 
     private bool _isRunning = false;
 
-    public void Start()
+    internal void Start()
     {
         if ( _isRunning )
         {
@@ -92,7 +92,7 @@ class SimpleMcpServer {
         }
     }
 
-    public void Stop()
+    internal void Stop()
     {
         if ( !_isRunning )
         {
@@ -113,7 +113,7 @@ class SimpleMcpServer {
         }
     }
 
-    public static void PrettyPrintJson ( string json )
+    internal static void PrettyPrintJson ( string json )
     {
         try
         {
@@ -1022,22 +1022,22 @@ class SimpleMcpServer {
         public List<PromptInfo> prompts { get; set; }
     }
 
-    public class PromptGetResult {
+    private sealed class PromptGetResult {
         public string description { get; set; }
-        public List<object> messages { get; set; }
+        public List<object> messages { get; set; } = new List<object>();
     }
 
-    public class ResourceListResult {
-        public List<object> resources { get; set; }
+    private sealed class ResourceListResult {
+        public List<object> resources { get; set; } = new List<object>();
     }
 
-    public class FinalPromptMessage {
+    private sealed class FinalPromptMessage {
         public string role { get; set; }
         public FinalPromptContent content { get; set; }
     }
 
-    public class FinalPromptContent {
-        public string type { get; set; }
+    private sealed class FinalPromptContent {
+        public string type { get; set; } = "text";
         public string text { get; set; }
     }
 }
