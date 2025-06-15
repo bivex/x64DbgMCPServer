@@ -152,11 +152,11 @@ internal sealed class SimpleMcpServer {
         }
     }
 
-    static bool pDebug = false;
+    private static bool s_PDebug = false;
 
     private async Task OnRequest ( HttpListenerContext ctx )
     {
-        if ( pDebug )
+        if ( s_PDebug )
         {
             LogRequest ( ctx );
         }
@@ -287,7 +287,7 @@ internal sealed class SimpleMcpServer {
     {
         if ( !ctx.Request.HasEntityBody )
         {
-            if ( pDebug )
+            if ( s_PDebug )
             {
                 Console.WriteLine ( "No body." );
             }
@@ -296,7 +296,7 @@ internal sealed class SimpleMcpServer {
         using ( var reader = new StreamReader ( ctx.Request.InputStream, ctx.Request.ContentEncoding ) )
         {
             var requestBody = await reader.ReadToEndAsync();
-            if ( pDebug )
+            if ( s_PDebug )
             {
                 Debug.WriteLine ( "jsonBody:" + requestBody );
             }
