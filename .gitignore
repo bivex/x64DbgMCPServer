@@ -389,3 +389,11 @@ FodyWeavers.xsd
 
 !DotNetPlugin.Impl/NativeBindings/Win32/
 !DotNetPlugin.Stub/NativeBindings/Win32/
+x64DbgMCPServer.ndproj
+
+NDependOut/
+
+CHECKCODE.bat
+
+NDependOut1/
+NDependOut2/
