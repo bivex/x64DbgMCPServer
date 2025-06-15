@@ -41,38 +41,38 @@ partial class Plugin {
         Console.WriteLine ( $"addr: {addr.ToPtrString()}" );
 
         Module.ModuleInfo modinfo;
-        if (!TryGetModuleInfo(addr, out modinfo))
+        if ( !TryGetModuleInfo ( addr, out modinfo ) )
         {
-            Console.Error.WriteLine($"Module.InfoFromAddr failed for address {addr.ToPtrString()}...");
+            Console.Error.WriteLine ( $"Module.InfoFromAddr failed for address {addr.ToPtrString()}..." );
             return false;
         }
-        Console.WriteLine($"InfoFromAddr success, base: {modinfo.@base.ToPtrString()}");
+        Console.WriteLine ( $"InfoFromAddr success, base: {modinfo.@base.ToPtrString()}" );
 
-        string fileName = ShowSaveFileDialogForModule(modinfo.name);
-        if (string.IsNullOrEmpty(fileName))
+        string fileName = ShowSaveFileDialogForModule ( modinfo.name );
+        if ( string.IsNullOrEmpty ( fileName ) )
         {
-            Console.WriteLine("File save dialog cancelled.");
-            return false;
-        }
-
-        nuint hProcess = Bridge.DbgValFromString("$hProcess");
-        if (!PerformProcessDump(hProcess, modinfo.@base, fileName, addr))
-        {
-            Console.Error.WriteLine($"DumpProcess failed for module {modinfo.name}...");
+            Console.WriteLine ( "File save dialog cancelled." );
             return false;
         }
 
-        Console.WriteLine($"Dumping done!");
+        nuint hProcess = Bridge.DbgValFromString ( "$hProcess" );
+        if ( !PerformProcessDump ( hProcess, modinfo.@base, fileName, addr ) )
+        {
+            Console.Error.WriteLine ( $"DumpProcess failed for module {modinfo.name}..." );
+            return false;
+        }
+
+        Console.WriteLine ( $"Dumping done!" );
         return true;
     }
 
-    private static bool TryGetModuleInfo(nuint address, out Module.ModuleInfo modInfo)
+    private static bool TryGetModuleInfo ( nuint address, out Module.ModuleInfo modInfo )
     {
         modInfo = new Module.ModuleInfo();
-        return Module.InfoFromAddr(address, ref modInfo);
+        return Module.InfoFromAddr ( address, ref modInfo );
     }
 
-    private static string ShowSaveFileDialogForModule(string moduleName)
+    private static string ShowSaveFileDialogForModule ( string moduleName )
     {
         string fileName = null;
         var saveFileDialog = new SaveFileDialog
@@ -82,23 +82,23 @@ partial class Plugin {
             FileName = moduleName
         };
 
-        var t = new Thread(() =>
+        var t = new Thread ( () =>
         {
-            if (saveFileDialog.ShowDialog() == DialogResult.OK)
+            if ( saveFileDialog.ShowDialog() == DialogResult.OK )
             {
                 fileName = saveFileDialog.FileName;
             }
-        });
-        t.SetApartmentState(ApartmentState.STA);
+        } );
+        t.SetApartmentState ( ApartmentState.STA );
         t.Start();
         t.Join();
 
         return fileName;
     }
 
-    private static bool PerformProcessDump(nuint hProcess, nuint baseAddress, string fileName, nuint entryPoint)
+    private static bool PerformProcessDump ( nuint hProcess, nuint baseAddress, string fileName, nuint entryPoint )
     {
-        return TitanEngine.DumpProcess((nint)hProcess, (nint)baseAddress, fileName, entryPoint);
+        return TitanEngine.DumpProcess ( ( nint ) hProcess, ( nint ) baseAddress, fileName, entryPoint );
     }
 
     //[Command("DotNetModuleEnum", DebugOnly = true)]
@@ -283,6 +283,33 @@ partial class Plugin {
         if ( !Bridge.DbgMemRead ( address, buffer, size ) ) // assume NativeBridge is a P/Invoke wrapper
         { return null; }
         return buffer;
+    }
+
+    private static string ReadMemoryString ( nuint address, int maxSize )
+    {
+        try
+        {
+            var memory = ReadMemory ( address, ( uint ) maxSize );
+            if ( memory == null )
+            { return null; }
+
+            int nullTerminationIndex = Array.IndexOf ( memory, ( byte ) 0 );
+            if ( nullTerminationIndex <= 0 ) // if not found or empty string
+            {
+                return null;
+            }
+
+            string result = Encoding.ASCII.GetString ( memory, 0, nullTerminationIndex );
+            if ( result.All ( c => c >= 0x20 && c < 0x7F ) )
+            {
+                return result;
+            }
+            return null;
+        }
+        catch
+        {
+            return null; // Failed to read memory
+        }
     }
 
     //[Command("WriteMemory", DebugOnly = true, MCPOnly = true)]
@@ -860,9 +887,9 @@ partial class Plugin {
                 return finalResult;
             }
 
-            var allocationRegions = GetMemoryMapRegions(nativeMemMap);
-            finalResult = ProcessAllocationRegions(allocationRegions);
-            SortModulesByBaseAddress(finalResult);
+            var allocationRegions = GetMemoryMapRegions ( nativeMemMap );
+            finalResult = ProcessAllocationRegions ( allocationRegions );
+            SortModulesByBaseAddress ( finalResult );
         }
         catch ( Exception ex )
         {
@@ -879,95 +906,95 @@ partial class Plugin {
         return finalResult;
     }
 
-    private static Dictionary<nuint, List<(nuint Base, nuint Size, string Info)>> GetMemoryMapRegions(MEMMAP_NATIVE nativeMemMap)
+    private static Dictionary<nuint, List< ( nuint Base, nuint Size, string Info ) >> GetMemoryMapRegions ( MEMMAP_NATIVE nativeMemMap )
     {
-        var allocationRegions = new Dictionary<nuint, List<(nuint Base, nuint Size, string Info)>>();
+        var allocationRegions = new Dictionary<nuint, List< ( nuint Base, nuint Size, string Info ) >>();
         int sizeOfMemPage = Marshal.SizeOf<MEMPAGE>();
 
-        for (int i = 0; i < nativeMemMap.count; i++)
+        for ( int i = 0; i < nativeMemMap.count; i++ )
         {
-            IntPtr currentPagePtr = new IntPtr(nativeMemMap.page.ToInt64() + (long)i * sizeOfMemPage);
-            MEMPAGE memPage = Marshal.PtrToStructure<MEMPAGE>(currentPagePtr);
+            IntPtr currentPagePtr = new IntPtr ( nativeMemMap.page.ToInt64() + ( long ) i * sizeOfMemPage );
+            MEMPAGE memPage = Marshal.PtrToStructure<MEMPAGE> ( currentPagePtr );
 
-            if ((memPage.mbi.Type & MEM_IMAGE) == MEM_IMAGE)
+            if ( ( memPage.mbi.Type & MEM_IMAGE ) == MEM_IMAGE )
             {
-                nuint allocBase = (nuint)memPage.mbi.AllocationBase.ToInt64();
-                nuint baseAddr = (nuint)memPage.mbi.BaseAddress.ToInt64();
+                nuint allocBase = ( nuint ) memPage.mbi.AllocationBase.ToInt64();
+                nuint baseAddr = ( nuint ) memPage.mbi.BaseAddress.ToInt64();
                 nuint regionSize = memPage.mbi.RegionSize;
                 string infoString = memPage.info ?? string.Empty;
 
-                if (!allocationRegions.ContainsKey(allocBase))
+                if ( !allocationRegions.ContainsKey ( allocBase ) )
                 {
-                    allocationRegions[allocBase] = new List<(nuint Base, nuint Size, string Info)>();
+                    allocationRegions[allocBase] = new List< ( nuint Base, nuint Size, string Info ) >();
                 }
-                allocationRegions[allocBase].Add((baseAddr, regionSize, infoString));
+                allocationRegions[allocBase].Add ( ( baseAddr, regionSize, infoString ) );
             }
         }
         return allocationRegions;
     }
 
-    private static List<(string Name, string Path, nuint Base, nuint Size)> ProcessAllocationRegions(Dictionary<nuint, List<(nuint Base, nuint Size, string Info)>> allocationRegions)
+    private static List< ( string Name, string Path, nuint Base, nuint Size ) > ProcessAllocationRegions ( Dictionary<nuint, List< ( nuint Base, nuint Size, string Info ) >> allocationRegions )
     {
-        var result = new List<(string Name, string Path, nuint Base, nuint Size)>();
-        foreach (var kvp in allocationRegions)
+        var result = new List< ( string Name, string Path, nuint Base, nuint Size ) >();
+        foreach ( var kvp in allocationRegions )
         {
             nuint allocBase = kvp.Key;
             var regions = kvp.Value;
 
-            if (regions.Count > 0)
+            if ( regions.Count > 0 )
             {
-                (string moduleName, string modulePath) = GetModuleNameAndPath(allocBase, regions);
-                nuint totalSize = CalculateModuleSize(regions);
+                ( string moduleName, string modulePath ) = GetModuleNameAndPath ( allocBase, regions );
+                nuint totalSize = CalculateModuleSize ( regions );
 
-                result.Add((moduleName, modulePath, allocBase, totalSize));
+                result.Add ( ( moduleName, modulePath, allocBase, totalSize ) );
             }
         }
         return result;
     }
 
-    private static (string moduleName, string modulePath) GetModuleNameAndPath(nuint allocBase, List<(nuint Base, nuint Size, string Info)> regions)
+    private static ( string moduleName, string modulePath ) GetModuleNameAndPath ( nuint allocBase, List< ( nuint Base, nuint Size, string Info ) > regions )
     {
         string modulePath = "Unknown Module";
-        var mainRegion = regions.FirstOrDefault(r => r.Base == allocBase);
+        var mainRegion = regions.FirstOrDefault ( r => r.Base == allocBase );
 
-        if (mainRegion.Info != null && !string.IsNullOrEmpty(mainRegion.Info))
+        if ( mainRegion.Info != null && !string.IsNullOrEmpty ( mainRegion.Info ) )
         {
             modulePath = mainRegion.Info;
         }
         else
         {
-            var firstInfoRegion = regions.FirstOrDefault(r => !string.IsNullOrEmpty(r.Info));
-            if (firstInfoRegion.Info != null)
+            var firstInfoRegion = regions.FirstOrDefault ( r => !string.IsNullOrEmpty ( r.Info ) );
+            if ( firstInfoRegion.Info != null )
             {
                 modulePath = firstInfoRegion.Info;
             }
         }
 
-        string finalModuleName = System.IO.Path.GetFileName(modulePath);
-        if (string.IsNullOrEmpty(finalModuleName))
+        string finalModuleName = System.IO.Path.GetFileName ( modulePath );
+        if ( string.IsNullOrEmpty ( finalModuleName ) )
         {
             finalModuleName = modulePath;
-            if (string.IsNullOrEmpty(finalModuleName))
+            if ( string.IsNullOrEmpty ( finalModuleName ) )
             {
                 finalModuleName = $"Module@0x{allocBase:X16}";
                 modulePath = finalModuleName;
             }
         }
-        return (finalModuleName, modulePath);
+        return ( finalModuleName, modulePath );
     }
 
-    private static nuint CalculateModuleSize(List<(nuint Base, nuint Size, string Info)> regions)
+    private static nuint CalculateModuleSize ( List< ( nuint Base, nuint Size, string Info ) > regions )
     {
         nuint minRegionBase = regions[0].Base;
         nuint maxRegionEnd = regions[0].Base + regions[0].Size;
-        for (int i = 1; i < regions.Count; i++)
+        for ( int i = 1; i < regions.Count; i++ )
         {
-            if (regions[i].Base < minRegionBase)
+            if ( regions[i].Base < minRegionBase )
             {
                 minRegionBase = regions[i].Base;
             }
             nuint currentEnd = regions[i].Base + regions[i].Size;
-            if (currentEnd > maxRegionEnd)
+            if ( currentEnd > maxRegionEnd )
             {
                 maxRegionEnd = currentEnd;
             }
@@ -975,20 +1002,20 @@ partial class Plugin {
         return maxRegionEnd - minRegionBase;
     }
 
-    private static void SortModulesByBaseAddress(List<(string Name, string Path, nuint Base, nuint Size)> modules)
+    private static void SortModulesByBaseAddress ( List< ( string Name, string Path, nuint Base, nuint Size ) > modules )
     {
-        modules.Sort((a, b) =>
+        modules.Sort ( ( a, b ) =>
         {
-            if (a.Base < b.Base)
+            if ( a.Base < b.Base )
             {
                 return -1;
             }
-            if (a.Base > b.Base)
+            if ( a.Base > b.Base )
             {
                 return 1;
             }
             return 0;
-        });
+        } );
     }
 
     [Command ( "GetAllModulesFromMemMap", DebugOnly = true, MCPOnly = true,
@@ -1034,57 +1061,25 @@ partial class Plugin {
         public nuint FrameSize;     // Calculated size (approx)
     }
 
-    // Modified function to return richer frame info
     public static List<CallStackFrameInfo> GetCallStackFunc ( int maxFrames = 32 )
     {
         var callstack = new List<CallStackFrameInfo>();
-        byte[] addrBuffer = new byte[sizeof ( ulong )]; // Buffer for reading addresses (nuint size)
-
-        // Get initial stack pointers from the debugger
-        // Ensure DbgValFromString is correctly implemented via P/Invoke
-        nuint rbp = DbgValFromStringAsNUInt ( "rbp" );
-        nuint rsp = DbgValFromStringAsNUInt ( "rsp" );
-        nuint currentRbp = rbp;
-        nuint previousRbp = 0; // To calculate frame size
-
-        if ( rbp == 0 || rbp < rsp ) // Initial check if RBP is valid
+        if ( !TryGetInitialStackPointers ( out nuint rbp, out nuint rsp ) )
         {
-            Console.WriteLine ( "[GetCallStackFunc] Initial RBP is invalid or below RSP." );
             return callstack;
         }
 
+        nuint currentRbp = rbp;
+        nuint previousRbp = 0;
+
         for ( int i = 0; i < maxFrames; i++ )
         {
-            // 1. Read Return Address from [RBP + 8] (or [RBP + sizeof(nuint)])
-            if ( !DbgMemRead ( currentRbp + ( nuint ) sizeof ( ulong ), addrBuffer, ( nuint ) sizeof ( ulong ) ) )
+            if ( !TryGetFrameInfo ( currentRbp, out nuint returnAddress, out nuint nextRbp ) )
             {
-                Console.WriteLine ( $"[GetCallStackFunc] Failed to read return address at 0x{currentRbp + (nuint)sizeof(ulong):X}" );
-                break; // Stop if memory read fails
-            }
-            nuint returnAddress = ( nuint ) BitConverter.ToUInt64 ( addrBuffer, 0 );
-
-            // Stop if return address is null (often end of chain)
-            if ( returnAddress == 0 )
-            {
-                Console.WriteLine ( "[GetCallStackFunc] Reached null return address." );
                 break;
             }
 
-            // 2. Read Saved RBP value from [RBP]
-            if ( !DbgMemRead ( currentRbp, addrBuffer, ( nuint ) sizeof ( ulong ) ) )
-            {
-                Console.WriteLine ( $"[GetCallStackFunc] Failed to read saved RBP at 0x{currentRbp:X}" );
-                break; // Stop if memory read fails
-            }
-            nuint nextRbp = ( nuint ) BitConverter.ToUInt64 ( addrBuffer, 0 );
-
-            // Calculate frame size (difference between current and previous RBP)
-            // Size is only meaningful after the first frame
-            nuint frameSize = ( previousRbp > 0 && currentRbp > previousRbp ) ? 0 : // Avoid nonsensical size if RBP decreased
-                              ( previousRbp > 0 ) ? previousRbp - currentRbp : 0;
-
-
-            // Add collected info for this frame
+            nuint frameSize = CalculateFrameSize ( currentRbp, previousRbp );
             callstack.Add ( new CallStackFrameInfo
             {
                 FrameAddress = currentRbp,
@@ -1092,21 +1087,85 @@ partial class Plugin {
                 FrameSize = frameSize
             } );
 
-            // Update RBP for the next iteration
-            previousRbp = currentRbp; // Store current RBP before updating
+            previousRbp = currentRbp;
             currentRbp = nextRbp;
 
-            // Validate the next RBP value
-            if ( currentRbp == 0 || currentRbp < rsp
-                    || currentRbp <= previousRbp ) // RBP must be > RSP and generally increase (move down stack)
+            if ( !IsNextRbpValid ( currentRbp, previousRbp, rsp ) )
             {
-                Console.WriteLine (
-                    $"[GetCallStackFunc] Invalid next RBP (0x{currentRbp:X}). Previous=0x{previousRbp:X}, RSP=0x{rsp:X}. Stopping walk." );
-                break; // Stop if RBP becomes null, goes below RSP, or doesn't advance
+                break;
             }
         }
 
         return callstack;
+    }
+
+    private static bool TryGetInitialStackPointers ( out nuint rbp, out nuint rsp )
+    {
+        rbp = DbgValFromStringAsNUInt ( "rbp" );
+        rsp = DbgValFromStringAsNUInt ( "rsp" );
+
+        if ( rbp == 0 || rbp < rsp )
+        {
+            Console.WriteLine ( "[GetCallStackFunc] Initial RBP is invalid or below RSP." );
+            return false;
+        }
+        return true;
+    }
+
+    private static bool TryReadNuintFromMemory ( nuint address, out nuint value )
+    {
+        byte[] buffer = new byte[sizeof ( ulong )];
+        if ( DbgMemRead ( address, buffer, ( nuint ) sizeof ( ulong ) ) )
+        {
+            value = ( nuint ) BitConverter.ToUInt64 ( buffer, 0 );
+            return true;
+        }
+        value = 0;
+        Console.WriteLine ( $"[GetCallStackFunc] Failed to read memory at 0x{address:X}" );
+        return false;
+    }
+
+    private static bool TryGetFrameInfo ( nuint currentRbp, out nuint returnAddress, out nuint nextRbp )
+    {
+        returnAddress = 0;
+        nextRbp = 0;
+
+        if ( !TryReadNuintFromMemory ( currentRbp + ( nuint ) sizeof ( ulong ), out returnAddress ) )
+        {
+            return false;
+        }
+
+        if ( returnAddress == 0 )
+        {
+            Console.WriteLine ( "[GetCallStackFunc] Reached null return address." );
+            return false;
+        }
+
+        return TryReadNuintFromMemory ( currentRbp, out nextRbp );
+    }
+
+    private static nuint CalculateFrameSize ( nuint currentRbp, nuint previousRbp )
+    {
+        if ( previousRbp == 0 )
+        {
+            return 0;
+        }
+        // Avoid nonsensical size if RBP decreased or is not what we expect
+        if ( currentRbp > previousRbp )
+        {
+            return 0;
+        }
+        return previousRbp - currentRbp;
+    }
+
+    private static bool IsNextRbpValid ( nuint currentRbp, nuint previousRbp, nuint rsp )
+    {
+        if ( currentRbp == 0 || currentRbp < rsp || currentRbp <= previousRbp )
+        {
+            Console.WriteLine ( $"[GetCallStackFunc] Invalid next RBP (0x{currentRbp:X}). Previous=0x{previousRbp:X}, RSP=0x{rsp:X}. Stopping walk." );
+            return false;
+        }
+        return true;
     }
 
 
@@ -1237,68 +1296,6 @@ partial class Plugin {
             return $"[GetCallStack] Error: {ex.Message}\n{ex.StackTrace}";
         }
     }
-
-    // GetCallStackFunc remains the same as the previous version, returning List<CallStackFrameInfo>
-    // public static List<CallStackFrameInfo> GetCallStackFunc(int maxFrames = 32) { ... }
-
-
-    //[Command("GetCallStack", DebugOnly = true, MCPOnly = true)]
-    //public static string GetCallStack(int maxFrames = 32)
-    //{
-    //    try
-    //    {
-    //        var callstack = GetCallStackFunc(maxFrames);
-
-    //        if (callstack.Count == 0)
-    //            return "[GetCallStack] No call stack could be retrieved.";
-
-    //        var output = new StringBuilder();
-    //        output.AppendLine($"[GetCallStack] Retrieved {callstack.Count} frames:");
-
-    //        for (int i = 0; i < callstack.Count; i++)
-    //        {
-    //            output.AppendLine($"Frame {i,2}: 0x{callstack[i]:X}");
-    //        }
-
-    //        return output.ToString().TrimEnd(); // remove trailing newline
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        return $"[GetCallStack] Error: {ex.Message}";
-    //    }
-    //}
-
-    //public static List<nuint> GetCallStackFunc(int maxFrames = 32)
-    //{
-    //    List<nuint> callstack = new List<nuint>();
-
-    //    nuint rbp = Bridge.DbgValFromString("rbp");
-    //    nuint rsp = Bridge.DbgValFromString("rsp");
-
-    //    for (int i = 0; i < maxFrames; i++)
-    //    {
-    //        // Read return address (next value after saved RBP)
-    //        byte[] addrBuffer = new byte[8]; // 64-bit address
-    //        if (!Bridge.DbgMemRead(rbp + 8, addrBuffer, 8))
-    //            break;
-
-    //        nuint returnAddress = (nuint)BitConverter.ToUInt64(addrBuffer, 0);
-    //        if (returnAddress == 0)
-    //            break;
-
-    //        callstack.Add(returnAddress);
-
-    //        // Read the previous RBP
-    //        if (!Bridge.DbgMemRead(rbp, addrBuffer, 8))
-    //            break;
-
-    //        rbp = (nuint)BitConverter.ToUInt64(addrBuffer, 0);
-    //        if (rbp == 0 || rbp < rsp)
-    //            break; // Invalid frame or stack unwound
-    //    }
-
-    //    return callstack;
-    //}
 
     [Command ( "GetAllActiveThreads", DebugOnly = true, MCPOnly = true,
                MCPCmdDescription = "Example: GetAllActiveThreads" )]
@@ -1537,204 +1534,34 @@ partial class Plugin {
                MCPCmdDescription = "Example: DumpModuleToFile pfilepath=C:\\Output.txt" )]
     public static void DumpModuleToFile ( string pfilepath )
     {
-        string filePath = pfilepath;//@"C:\dump.txt"; // Hardcoded file path as requested
-        Console.WriteLine ( $"Attempting to dump module info to: {filePath}" );
+        Console.WriteLine ( $"Attempting to dump module info to: {pfilepath}" );
 
         try
         {
-            // 1. Get current instruction pointer and module info
-            var cip = Bridge.DbgValFromString ( "cip" ); // Gets EIP or RIP depending on architecture
-            var modInfo = new Module.ModuleInfo();
-
-            if ( !Module.InfoFromAddr ( cip, ref modInfo ) )
+            var cip = Bridge.DbgValFromString ( "cip" );
+            if ( !TryGetModuleInfo ( cip, out var modInfo ) )
             {
-                Console.Error.WriteLine (
-                    $"Error: Could not find module information for address {cip.ToPtrString()}. Is the debugger attached and running?" );
+                Console.Error.WriteLine ( $"Error: Could not find module information for address {cip.ToPtrString()}. Is the debugger attached and running?" );
                 return;
             }
 
-
-            var LoadedModules = GetAllModulesFromMemMapFunc();
-            Console.WriteLine ( "Modules loaded Count: " + LoadedModules.Count );
-
-            // Deconstruct into FOUR variables matching the tuple returned by the function
-            foreach ( var ( name, path, baseAddr, size ) in LoadedModules )
+            using ( var writer = new StreamWriter ( pfilepath, false, Encoding.UTF8 ) )
             {
-                // Calculate the end address correctly using baseAddr + size
-                nuint endAddr = baseAddr + size;
-                // Use the correct variables in the output string
-                // Added Path for context, and corrected End address calculation
-                Console.WriteLine ( $"{name,-30} Path: {path,-70} Base: 0x{baseAddr:X16} End: 0x{endAddr:X16} Size: 0x{size:X}" );
-                // Or, if you only wanted the original 3 pieces of info (adjusting end calculation):
-                // Console.WriteLine($"{name,-20} 0x{baseAddr:X16} - 0x{endAddr:X16}");
+                DumpHeader ( writer, modInfo.name );
+                DumpRegisters ( writer, cip );
+                DumpDisassembly ( writer, modInfo );
+                DumpFooter ( writer );
             }
 
-            IntPtr ptr = new IntPtr ( 0x14000140B ); //Set to base address of module
-            nuint address = ( nuint ) ptr.ToInt64();
-            byte[] nops = Enumerable.Repeat ( ( byte ) 0x90, 7 ).ToArray();
-
-            bool success = WriteMemory ( address, nops );
-
-            if ( success )
-            {
-                Console.WriteLine ( $"Successfully patched {nops.Length} NOPs at 0x{address:X}" );
-            }
-            else
-            {
-                Console.WriteLine ( $"Failed to write memory at 0x{address:X}" );
-            }
-
-
-            Console.WriteLine ( $"Found module '{modInfo.name}' at base {modInfo.@base.ToPtrString()}, size {modInfo.size:X}" );
-
-            // Use StreamWriter to write to the file
-            using ( var writer = new StreamWriter ( filePath, false, Encoding.UTF8 ) ) // Overwrite if exists
-            {
-                // 2. Dump Registers
-                writer.WriteLine ( "--- Current Register State ---" );
-                writer.WriteLine ( $"Module: {modInfo.name}" );
-                writer.WriteLine ( $"Timestamp: {DateTime.Now}" );
-                writer.WriteLine ( "-----------------------------" );
-                // Add common registers (adjust for x86/x64 as needed, DbgValFromString handles it)
-                writer.WriteLine ( $"RAX: {Bridge.DbgValFromString("rax").ToPtrString()}" );
-                writer.WriteLine ( $"RBX: {Bridge.DbgValFromString("rbx").ToPtrString()}" );
-                writer.WriteLine ( $"RCX: {Bridge.DbgValFromString("rcx").ToPtrString()}" );
-                writer.WriteLine ( $"RDX: {Bridge.DbgValFromString("rdx").ToPtrString()}" );
-                writer.WriteLine ( $"RSI: {Bridge.DbgValFromString("rsi").ToPtrString()}" );
-                writer.WriteLine ( $"RDI: {Bridge.DbgValFromString("rdi").ToPtrString()}" );
-                writer.WriteLine ( $"RBP: {Bridge.DbgValFromString("rbp").ToPtrString()}" );
-                writer.WriteLine ( $"RSP: {Bridge.DbgValFromString("rsp").ToPtrString()}" );
-                writer.WriteLine ( $"RIP: {cip.ToPtrString()}" ); // Use the 'cip' we already fetched
-                writer.WriteLine ( $"R8:  {Bridge.DbgValFromString("r8").ToPtrString()}" );
-                writer.WriteLine ( $"R9:  {Bridge.DbgValFromString("r9").ToPtrString()}" );
-                writer.WriteLine ( $"R10: {Bridge.DbgValFromString("r10").ToPtrString()}" );
-                writer.WriteLine ( $"R11: {Bridge.DbgValFromString("r11").ToPtrString()}" );
-                writer.WriteLine ( $"R12: {Bridge.DbgValFromString("r12").ToPtrString()}" );
-                writer.WriteLine ( $"R13: {Bridge.DbgValFromString("r13").ToPtrString()}" );
-                writer.WriteLine ( $"R14: {Bridge.DbgValFromString("r14").ToPtrString()}" );
-                writer.WriteLine ( $"R15: {Bridge.DbgValFromString("r15").ToPtrString()}" );
-                writer.WriteLine ( $"EFlags: {Bridge.DbgValFromString("eflags").ToPtrString()}" ); // Or rflags
-                writer.WriteLine ( "-----------------------------" );
-                writer.WriteLine(); // Add a blank line
-
-                // 3. Dump Disassembly and Labels
-                writer.WriteLine (
-                    $"--- Disassembly for {modInfo.name} ({modInfo.@base.ToPtrString()} - {(modInfo.@base + modInfo.size).ToPtrString()}) ---" );
-                writer.WriteLine ( "-----------------------------" );
-
-
-
-                nuint currentAddr = modInfo.@base;
-                var endAddr = modInfo.@base + modInfo.size;
-                const int MAX_INSTRUCTIONS = 10000; // Limit number of instructions to prevent too large dumps
-                int instructionCount = 0;
-
-                // Write disassembly with labels
-                while ( currentAddr < endAddr && instructionCount < MAX_INSTRUCTIONS )
-                {
-
-                    // Get label at current address if exists
-                    string label = GetLabel ( currentAddr );
-                    if ( !string.IsNullOrEmpty ( label ) )
-                    {
-                        writer.WriteLine();
-                        writer.WriteLine ( $"{label}:" );
-                    }
-
-                    // Disassemble instruction at current address
-                    Bridge.BASIC_INSTRUCTION_INFO disasm = new Bridge.BASIC_INSTRUCTION_INFO();
-                    Bridge.DbgDisasmFastAt ( currentAddr, ref disasm );
-                    if ( disasm.size == 0 )
-                    {
-                        // Failed to disassemble, move to next byte
-                        currentAddr++;
-                        continue;
-                    }
-
-                    //LabelMatchingInstruction(currentAddr, ref disasm);
-                    //LabelMatchingBytes(currentAddr, new byte[] { 0x48, 0x85, 0xc0}, "Found Bytes");
-
-                    // Attempt to dereference value or address for a potential string
-                    string inlineString = null;
-                    nuint possiblePtr = 0;
-
-                    if ( disasm.type == 1 ) // value (immediate)
-                    {
-                        possiblePtr = disasm.value.value;
-                    }
-                    else if ( disasm.type == 2 ) // address
-                    {
-                        possiblePtr = disasm.addr;
-                    }
-
-                    if ( possiblePtr != 0 )
-                    {
-                        try
-                        {
-                            var strData = ReadMemory ( possiblePtr, 64 );
-                            int len = Array.IndexOf ( strData, ( byte ) 0 );
-                            if ( len > 0 )
-                            {
-                                inlineString = Encoding.ASCII.GetString ( strData, 0, len );
-
-                                // Optional: filter printable ASCII
-                                if ( inlineString.All ( c => c >= 0x20 && c < 0x7F ) )
-                                {
-                                    writer.WriteLine ( $"    ; \"{inlineString}\"" );
-                                }
-                                else
-                                {
-                                    inlineString = null;
-                                }
-                            }
-                        }
-                        catch
-                        {
-                            // Ignore invalid memory
-                        }
-                    }
-
-
-                    // Format and write instruction
-                    string bytes = BitConverter.ToString ( ReadMemory ( currentAddr, ( uint ) disasm.size ) ); //.Replace("-", " ")
-                    writer.WriteLine ( $"{currentAddr.ToPtrString()}  {bytes,-20}  {disasm.instruction}" );
-
-                    // Move to next instruction
-                    currentAddr += ( nuint ) disasm.size;
-                    instructionCount++;
-
-                    // If we've hit a lot of instructions for one section, add a progress note
-                    if ( instructionCount % 1000 == 0 )
-                    {
-                        //Console.WriteLine($"Dumped {instructionCount} instructions...");
-                    }
-                }
-
-                if ( instructionCount >= MAX_INSTRUCTIONS )
-                {
-                    writer.WriteLine();
-                    writer.WriteLine ( $"--- Instruction limit ({MAX_INSTRUCTIONS}) reached. Dump truncated. ---" );
-                }
-
-
-
-
-
-
-                writer.WriteLine ( "-----------------------------" );
-                writer.WriteLine ( "--- Dump Complete ---" );
-            } // StreamWriter is automatically flushed and closed here
-
-            Console.WriteLine ( $"Successfully dumped module '{modInfo.name}' and registers to {filePath}" );
+            Console.WriteLine ( $"Successfully dumped module '{modInfo.name}' and registers to {pfilepath}" );
         }
         catch ( UnauthorizedAccessException ex )
         {
-            Console.Error.WriteLine (
-                $"Error: Access denied writing to '{filePath}'. Try running x64dbg as administrator or choose a different path. Details: {ex.Message}" );
+            Console.Error.WriteLine ( $"Error: Access denied writing to '{pfilepath}'. Try running x64dbg as administrator or choose a different path. Details: {ex.Message}" );
         }
         catch ( IOException ex )
         {
-            Console.Error.WriteLine ( $"Error: An I/O error occurred while writing to '{filePath}'. Details: {ex.Message}" );
+            Console.Error.WriteLine ( $"Error: An I/O error occurred while writing to '{pfilepath}'. Details: {ex.Message}" );
         }
         catch ( Exception ex ) // Catch-all for other unexpected errors
         {
@@ -1743,17 +1570,102 @@ partial class Plugin {
         }
     }
 
+    private static void DumpHeader ( StreamWriter writer, string moduleName )
+    {
+        writer.WriteLine ( "--- Current Register State ---" );
+        writer.WriteLine ( $"Module: {moduleName}" );
+        writer.WriteLine ( $"Timestamp: {DateTime.Now}" );
+        writer.WriteLine ( "-----------------------------" );
+    }
 
+    private static void DumpRegisters ( StreamWriter writer, nuint cip )
+    {
+        var registers = new[]
+        {
+            "RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP", "RSP",
+            "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15",
+            "EFlags"
+        };
 
+        writer.WriteLine ( $"RIP: {cip.ToPtrString()}" );
+        foreach ( var reg in registers )
+        {
+            writer.WriteLine ( $"{reg}: {Bridge.DbgValFromString(reg.ToLower()).ToPtrString()}" );
+        }
+        writer.WriteLine ( "-----------------------------" );
+        writer.WriteLine();
+    }
 
+    private static void DumpDisassembly ( StreamWriter writer, Module.ModuleInfo modInfo )
+    {
+        writer.WriteLine ( $"--- Disassembly for {modInfo.name} ({modInfo.@base.ToPtrString()} - {(modInfo.@base + modInfo.size).ToPtrString()}) ---" );
+        writer.WriteLine ( "-----------------------------" );
 
+        nuint currentAddr = modInfo.@base;
+        var endAddr = modInfo.@base + modInfo.size;
+        const int MAX_INSTRUCTIONS = 10000;
+        int instructionCount = 0;
 
+        while ( currentAddr < endAddr && instructionCount < MAX_INSTRUCTIONS )
+        {
+            string label = GetLabel ( currentAddr );
+            if ( !string.IsNullOrEmpty ( label ) )
+            {
+                writer.WriteLine();
+                writer.WriteLine ( $"{label}:" );
+            }
 
+            var disasm = new Bridge.BASIC_INSTRUCTION_INFO();
+            Bridge.DbgDisasmFastAt ( currentAddr, ref disasm );
+            if ( disasm.size == 0 )
+            {
+                writer.WriteLine ( $"{currentAddr.ToPtrString()}  (could not disassemble)" );
+                currentAddr++;
+                continue;
+            }
 
+            TryDumpInlineString ( writer, disasm );
 
+            string bytes = BitConverter.ToString ( ReadMemory ( currentAddr, ( uint ) disasm.size ) );
+            writer.WriteLine ( $"{currentAddr.ToPtrString()}  {bytes,-20}  {disasm.instruction}" );
 
+            currentAddr += ( nuint ) disasm.size;
+            instructionCount++;
+        }
 
+        if ( instructionCount >= MAX_INSTRUCTIONS )
+        {
+            writer.WriteLine();
+            writer.WriteLine ( $"--- Instruction limit ({MAX_INSTRUCTIONS}) reached. Dump truncated. ---" );
+        }
+        writer.WriteLine ( "-----------------------------" );
+    }
 
+    private static void TryDumpInlineString ( StreamWriter writer, Bridge.BASIC_INSTRUCTION_INFO disasm )
+    {
+        nuint destAddr = 0;
+        if ( disasm.type == 1 ) // value (immediate)
+        {
+            destAddr = disasm.value.value;
+        }
+        else if ( disasm.type == 2 ) // address
+        {
+            destAddr = disasm.addr;
+        }
 
+        if ( destAddr != 0 )
+        {
+            var inlineString = ReadMemoryString ( destAddr, 128 );
+            if ( !string.IsNullOrEmpty ( inlineString ) )
+            {
+                writer.WriteLine ( $"    ; \"{inlineString}\"" );
+            }
+        }
+    }
+
+    private static void DumpFooter ( StreamWriter writer )
+    {
+        writer.WriteLine ( "--- Dump Complete ---" );
+    }
 }
 }
