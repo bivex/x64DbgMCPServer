@@ -1453,89 +1453,185 @@ partial class Plugin {
         try
         {
             // Parse address string
-            nuint MyAddresses = ( nuint ) Convert.ToUInt64 (
-                                    address.StartsWith ( "0x", StringComparison.OrdinalIgnoreCase ) ? address.Substring ( 2 ) : address,
-                                    address.StartsWith ( "0x", StringComparison.OrdinalIgnoreCase ) ? 16 : 10
-                                );
-
-            int instructionCount = 0;
-            int bytesRead = 0;
-            const int MAX_INSTRUCTIONS = 5000;
-
-            var output = new StringBuilder();
-
-            while ( instructionCount < MAX_INSTRUCTIONS && bytesRead < byteCount )
-            {
-                string label = GetLabel ( MyAddresses );
-                if ( !string.IsNullOrEmpty ( label ) )
-                {
-                    output.AppendLine();
-                    output.AppendLine ( $"{label}:" );
-                }
-
-                var disasm = new Bridge.BASIC_INSTRUCTION_INFO();
-                Bridge.DbgDisasmFastAt ( MyAddresses, ref disasm );
-
-                if ( disasm.size == 0 )
-                {
-                    MyAddresses += 1;
-                    bytesRead += 1;
-                    continue;
-                }
-
-                // Attempt string dereference
-                string inlineString = null;
-                nuint ptr = disasm.type == 1 ? disasm.value.value :
-                            disasm.type == 2 ? disasm.addr : 0;
-
-                if ( ptr != 0 )
-                {
-                    try
-                    {
-                        var strData = ReadMemory ( ptr, 64 );
-                        int len = Array.IndexOf ( strData, ( byte ) 0 );
-                        if ( len > 0 )
-                        {
-                            var decoded = Encoding.ASCII.GetString ( strData, 0, len );
-                            if ( decoded.All ( c => c >= 0x20 && c < 0x7F ) )
-                            {
-                                inlineString = decoded;
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // ignore bad memory access
-                    }
-                }
-
-                string bytes = BitConverter.ToString ( ReadMemory ( MyAddresses, ( uint ) disasm.size ) );
-                output.Append ( $"{MyAddresses.ToPtrString()}  {bytes,-20}  {disasm.instruction}" );
-                if ( inlineString != null )
-                { output.Append ( $"    ; \"{inlineString}\"" ); }
-                output.AppendLine();
-
-                MyAddresses += ( nuint ) disasm.size;
-                bytesRead += disasm.size;
-                instructionCount++;
-            }
-
-            if ( instructionCount >= MAX_INSTRUCTIONS )
-            { output.AppendLine ( $"; Max instruction limit ({MAX_INSTRUCTIONS}) reached" ); }
-
-            if ( bytesRead >= byteCount )
-            { output.AppendLine ( $"; Byte read limit ({byteCount}) reached" ); }
-
-            return output.ToString();
+            nuint startAddress = ParseAddressString(address);
+            return DisassembleMemoryRange(startAddress, byteCount);
         }
         catch ( Exception ex )
         {
-            return $"[GetDismAtAddress] Error: {ex.Message}";
+            return $"[ReadDismAtAddress] Error: {ex.Message}";
         }
     }
 
+    /// <summary>
+    /// Parses a string representation of an address into a nuint value.
+    /// </summary>
+    /// <param name="address">The address string, with or without 0x prefix</param>
+    /// <returns>The parsed address as nuint</returns>
+    private static nuint ParseAddressString(string address)
+    {
+        bool isHex = address.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+        string valuePart = isHex ? address.Substring(2) : address;
+        int baseValue = isHex ? 16 : 10;
+        
+        return (nuint)Convert.ToUInt64(valuePart, baseValue);
+    }
 
+    /// <summary>
+    /// Disassembles a range of memory starting at the specified address.
+    /// </summary>
+    /// <param name="startAddress">The starting address for disassembly</param>
+    /// <param name="byteCount">Maximum number of bytes to disassemble</param>
+    /// <returns>A string containing the disassembled instructions</returns>
+    private static string DisassembleMemoryRange(nuint startAddress, int byteCount)
+    {
+        int instructionCount = 0;
+        int bytesRead = 0;
+        const int MAX_INSTRUCTIONS = 5000;
+        var output = new StringBuilder();
+        nuint currentAddress = startAddress;
 
+        while (instructionCount < MAX_INSTRUCTIONS && bytesRead < byteCount)
+        {
+            ProcessLabelIfPresent(output, currentAddress);
+            
+            var disasm = new Bridge.BASIC_INSTRUCTION_INFO();
+            Bridge.DbgDisasmFastAt(currentAddress, ref disasm);
+
+            if (disasm.size == 0)
+            {
+                currentAddress += 1;
+                bytesRead += 1;
+                continue;
+            }
+
+            string inlineString = GetInlineString(disasm);
+            AppendDisassembledInstruction(output, currentAddress, disasm, inlineString);
+
+            currentAddress += (nuint)disasm.size;
+            bytesRead += disasm.size;
+            instructionCount++;
+        }
+
+        AppendLimitMessages(output, instructionCount, bytesRead, MAX_INSTRUCTIONS, byteCount);
+        return output.ToString();
+    }
+
+    /// <summary>
+    /// Processes and outputs any label present at the given address.
+    /// </summary>
+    /// <param name="output">The StringBuilder to append output to</param>
+    /// <param name="address">The address to check for labels</param>
+    private static void ProcessLabelIfPresent(StringBuilder output, nuint address)
+    {
+        string label = GetLabel(address);
+        if (!string.IsNullOrEmpty(label))
+        {
+            output.AppendLine();
+            output.AppendLine($"{label}:");
+        }
+    }
+
+    /// <summary>
+    /// Extracts a string from the address referenced in the instruction, if possible.
+    /// </summary>
+    /// <param name="disasm">The disassembled instruction info</param>
+    /// <returns>The string if found, null otherwise</returns>
+    private static string GetInlineString(Bridge.BASIC_INSTRUCTION_INFO disasm)
+    {
+        nuint ptr = GetPotentialStringPointer(disasm);
+        if (ptr == 0)
+            return null;
+
+        try
+        {
+            return ExtractStringFromMemory(ptr);
+        }
+        catch
+        {
+            // Ignore bad memory access
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets a potential string pointer from the instruction based on its type.
+    /// </summary>
+    /// <param name="disasm">The disassembled instruction info</param>
+    /// <returns>A potential pointer to a string, or 0 if none found</returns>
+    private static nuint GetPotentialStringPointer(Bridge.BASIC_INSTRUCTION_INFO disasm)
+    {
+        if (disasm.type == 1) // value (immediate)
+            return disasm.value.value;
+        else if (disasm.type == 2) // address
+            return disasm.addr;
+        return 0;
+    }
+
+    /// <summary>
+    /// Extracts a null-terminated ASCII string from the specified memory address.
+    /// </summary>
+    /// <param name="address">The memory address to read from</param>
+    /// <returns>The extracted string, or null if not a valid ASCII string</returns>
+    private static string ExtractStringFromMemory(nuint address)
+    {
+        var strData = ReadMemory(address, 64);
+        int len = Array.IndexOf(strData, (byte)0);
+        
+        if (len <= 0)
+            return null;
+            
+        var decoded = Encoding.ASCII.GetString(strData, 0, len);
+        
+        // Check if the string contains only printable ASCII characters
+        if (decoded.All(c => c >= 0x20 && c < 0x7F))
+            return decoded;
+            
+        return null;
+    }
+
+    /// <summary>
+    /// Appends a disassembled instruction to the output.
+    /// </summary>
+    /// <param name="output">The StringBuilder to append to</param>
+    /// <param name="address">The address of the instruction</param>
+    /// <param name="disasm">The disassembled instruction info</param>
+    /// <param name="inlineString">Optional inline string reference to display</param>
+    private static void AppendDisassembledInstruction(
+        StringBuilder output, 
+        nuint address, 
+        Bridge.BASIC_INSTRUCTION_INFO disasm, 
+        string inlineString)
+    {
+        string bytes = BitConverter.ToString(ReadMemory(address, (uint)disasm.size));
+        output.Append($"{address.ToPtrString()}  {bytes,-20}  {disasm.instruction}");
+        
+        if (inlineString != null)
+            output.Append($"    ; \"{inlineString}\"");
+            
+        output.AppendLine();
+    }
+
+    /// <summary>
+    /// Appends messages about any limits reached during disassembly.
+    /// </summary>
+    /// <param name="output">The StringBuilder to append to</param>
+    /// <param name="instructionCount">Number of instructions processed</param>
+    /// <param name="bytesRead">Number of bytes read</param>
+    /// <param name="maxInstructions">Maximum allowed instructions</param>
+    /// <param name="byteCount">Maximum allowed bytes</param>
+    private static void AppendLimitMessages(
+        StringBuilder output, 
+        int instructionCount, 
+        int bytesRead, 
+        int maxInstructions, 
+        int byteCount)
+    {
+        if (instructionCount >= maxInstructions)
+            output.AppendLine($"; Max instruction limit ({maxInstructions}) reached");
+
+        if (bytesRead >= byteCount)
+            output.AppendLine($"; Byte read limit ({byteCount}) reached");
+    }
 
     [Command ( "DumpModuleToFile", DebugOnly = true, MCPOnly = true,
                MCPCmdDescription = "Example: DumpModuleToFile pfilepath=C:\\Output.txt" )]
