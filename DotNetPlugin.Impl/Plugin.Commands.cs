@@ -25,7 +25,7 @@ partial class Plugin {
         Console.WriteLine ( ".Net test command!" );
         string empty = string.Empty;
         string Left = Interaction.InputBox ( "Enter value pls", "NetTest", "", -1, -1 );
-        if ( Left == null | Operators.CompareString ( Left, "", false ) == 0 )
+        if ( Left == null || Operators.CompareString ( Left, "", false ) == 0 )
         { Console.WriteLine ( "cancel pressed!" ); }
         else
         { Console.WriteLine ( $"line: {Left}" ); }
@@ -950,6 +950,10 @@ partial class Plugin {
     string TryGetDereferencedString ( nuint address )
     {
         var data = ReadMemory ( address, 64 ); // read 64 bytes (arbitrary)
+        if ( data == null )
+        {
+            return null;
+        }
         int end = Array.IndexOf ( data, ( byte ) 0 );
         if ( end <= 0 )
         {
@@ -1157,8 +1161,10 @@ partial class Plugin {
         {
             byte[] actualBytes = ReadMemory ( address, ( uint ) pattern.Length );
 
-            if ( actualBytes.Length != pattern.Length )
-            { return; }
+            if ( actualBytes == null || actualBytes.Length != pattern.Length )
+            {
+                return;
+            }
 
             for ( int i = 0; i < pattern.Length; i++ )
             {
@@ -1579,7 +1585,7 @@ partial class Plugin {
                 if ( !string.IsNullOrEmpty ( retrievedComment ) )
                 {
                     // Handle auto-comment marker (\1)
-                    symbols.Comment = ( retrievedComment.Length > 0 && retrievedComment[0] == '\x01' )
+                    symbols.Comment = ( retrievedComment[0] == '\x01' )
                                       ? retrievedComment.Substring ( 1 )
                                       : retrievedComment;
                 }
@@ -1890,18 +1896,28 @@ partial class Plugin {
     private static string ExtractStringFromMemory ( nuint address )
     {
         var strData = ReadMemory ( address, 64 );
+        if ( strData == null )
+        {
+            return null;
+        }
         int len = Array.IndexOf ( strData, ( byte ) 0 );
 
         if ( len <= 0 )
-        { return null; }
+        {
+            return null;
+        }
 
         var decoded = Encoding.ASCII.GetString ( strData, 0, len );
 
         // Check if the string contains only printable ASCII characters
         if ( decoded.All ( c => c >= 0x20 && c < 0x7F ) )
-        { return decoded; }
-
-        return null;
+        {
+            return decoded;
+        }
+        else
+        {
+            return null;
+        }
     }
 
     /// <summary>
