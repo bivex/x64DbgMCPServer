@@ -175,6 +175,25 @@ public class McpCommandDispatcher {
         return toolsList;
     }
 
+    public IReadOnlyDictionary<string, string> GetCommandList()
+    {
+        var commandList = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        lock (_commands)
+        {
+            foreach (var command in _commands)
+            {
+                var attribute = command.Value.GetCustomAttribute<CommandAttribute>();
+                if (attribute != null)
+                {
+                    commandList[command.Key] = string.IsNullOrEmpty(attribute.MCPCmdDescription)
+                        ? $"Executes the {command.Key} command."
+                        : attribute.MCPCmdDescription;
+                }
+            }
+        }
+        return commandList;
+    }
+
     // Helper method to convert C# types to JSON schema types
     private string GetJsonSchemaType ( Type type )
     {

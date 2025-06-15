@@ -24,6 +24,8 @@ class SimpleMcpServer {
     public bool IsActivelyDebugging = false;
     public bool OutputPlugingDebugInformation = true;
 
+    public McpCommandDispatcher CommandDispatcher => _commandDispatcher;
+
     public SimpleMcpServer ( Type commandSourceType )
     {
         _targetType = commandSourceType;
