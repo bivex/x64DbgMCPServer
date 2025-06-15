@@ -583,6 +583,252 @@ partial class Plugin {
         }
     }
 
+    [Command("Run", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Continue program execution. (Equivalent to run or g)\r\nExample: Run")]
+    public static string Run()
+    {
+        try
+        {
+            if (DbgCmdExec("run"))
+            {
+                return "Program execution continued.";
+            }
+            return "Failed to continue program execution.";
+        }
+        catch (Exception ex)
+        {
+            return $"[Run] Error: {ex.Message}";
+        }
+    }
+
+    [Command("Pause", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Pause program execution.\r\nExample: Pause")]
+    public static string Pause()
+    {
+        try
+        {
+            if (DbgCmdExec("pause"))
+            {
+                return "Program execution paused.";
+            }
+            return "Failed to pause program execution.";
+        }
+        catch (Exception ex)
+        {
+            return $"[Pause] Error: {ex.Message}";
+        }
+    }
+
+    [Command("StepInto", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Step into function. (Equivalent to sti)\r\nExample: StepInto")]
+    public static string StepInto()
+    {
+        try
+        {
+            if (DbgCmdExec("sti"))
+            {
+                return "Step into successful.";
+            }
+            return "Failed to step into.";
+        }
+        catch (Exception ex)
+        {
+            return $"[StepInto] Error: {ex.Message}";
+        }
+    }
+
+    [Command("StepOver", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Step over function. (Equivalent to sto)\r\nExample: StepOver")]
+    public static string StepOver()
+    {
+        try
+        {
+            if (DbgCmdExec("sto"))
+            {
+                return "Step over successful.";
+            }
+            return "Failed to step over.";
+        }
+        catch (Exception ex)
+        {
+            return $"[StepOver] Error: {ex.Message}";
+        }
+    }
+
+    [Command("StepOut", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Step out of current function. (Equivalent to sso)\r\nExample: StepOut")]
+    public static string StepOut()
+    {
+        try
+        {
+            if (DbgCmdExec("sso"))
+            {
+                return "Step out successful.";
+            }
+            return "Failed to step out.";
+        }
+        catch (Exception ex)
+        {
+            return $"[StepOut] Error: {ex.Message}";
+        }
+    }
+
+    [Command("AttachToProcess", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Attach to an existing process by its PID.\r\nExample: AttachToProcess pid=1234")]
+    public static string AttachToProcess(string pid)
+    {
+        try
+        {
+            if (DbgCmdExec($"attach {pid}"))
+            {
+                return $"Attached to process {pid}.";
+            }
+            return $"Failed to attach to process {pid}.";
+        }
+        catch (Exception ex)
+        {
+            return $"[AttachToProcess] Error: {ex.Message}";
+        }
+    }
+
+    [Command("DetachFromProcess", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Detach from the current process.\r\nExample: DetachFromProcess")]
+    public static string DetachFromProcess()
+    {
+        try
+        {
+            if (DbgCmdExec("detach"))
+            {
+                return "Detached from current process.";
+            }
+            return "Failed to detach from current process.";
+        }
+        catch (Exception ex)
+        {
+            return $"[DetachFromProcess] Error: {ex.Message}";
+        }
+    }
+
+    [Command("TerminateProcess", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Terminate the debugged process. (Equivalent to kill)\r\nExample: TerminateProcess")]
+    public static string TerminateProcess()
+    {
+        try
+        {
+            if (DbgCmdExec("kill"))
+            {
+                return "Debugged process terminated.";
+            }
+            return "Failed to terminate debugged process.";
+        }
+        catch (Exception ex)
+        {
+            return $"[TerminateProcess] Error: {ex.Message}";
+        }
+    }
+
+    [Command("SwitchThread", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Switch to the specified thread.\r\nExample: SwitchThread threadId=123")]
+    public static string SwitchThread(string threadId)
+    {
+        try
+        {
+            if (DbgCmdExec($"thread {threadId}"))
+            {
+                return $"Switched to thread {threadId}.";
+            }
+            return $"Failed to switch to thread {threadId}.";
+        }
+        catch (Exception ex)
+        {
+            return $"[SwitchThread] Error: {ex.Message}";
+        }
+    }
+
+    [Command("FindPattern", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Search for a given byte pattern in memory.\r\nExample: FindPattern pattern=90 89 78")]
+    public static string FindPattern(string pattern)
+    {
+        try
+        {
+            // Get current module info to define search range
+            nuint cip = Bridge.DbgValFromString("cip");
+            Module.ModuleInfo modInfo;
+            if (!TryGetModuleInfo(cip, out modInfo))
+            {
+                return "Error: Could not get current module information to define search range.";
+            }
+
+            // Convert space-separated hex string to byte array
+            string[] byteParts = pattern.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            byte[] data = byteParts.Select(b =>
+            {
+                if (b.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                { b = b.Substring(2); }
+                return byte.Parse(b, NumberStyles.HexNumber);
+            }).ToArray();
+
+            if (data.Length == 0)
+            {
+                return "Error: No valid bytes found in pattern.";
+            }
+
+            string hexPattern = BitConverter.ToString(data).Replace("-", " ");
+            string command = $"pattern {modInfo.@base.ToPtrString()} {modInfo.size.ToPtrString()} {hexPattern}";
+
+            if (DbgCmdExec(command))
+            {
+                return $"Pattern search initiated in module {modInfo.name} ({modInfo.@base.ToPtrString()} - {(modInfo.@base + modInfo.size).ToPtrString()}). Results will appear in x64dbg log.";
+            }
+            return $"Failed to initiate pattern search.";
+        }
+        catch (Exception ex)
+        {
+            return $"[FindPattern] Error: {ex.Message}";
+        }
+    }
+
+    [Command("GetModuleInfo", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Get detailed information about a specific module (address, size, entry point).\r\nExample: GetModuleInfo moduleName=kernel32.dll")]
+    public static string GetModuleInfo(string moduleName)
+    {
+        try
+        {
+            var modules = GetAllModulesFromMemMapFunc();
+            foreach (var mod in modules)
+            {
+                if (mod.Name.Equals(moduleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"Module: {mod.Name}\r\nPath: {mod.Path}\r\nBase Address: 0x{mod.Base:X16}\r\nSize: 0x{mod.Size:X}";
+                }
+            }
+            return $"Module '{moduleName}' not found.";
+        }
+        catch (Exception ex)
+        {
+            return $"[GetModuleInfo] Error: {ex.Message}";
+        }
+    }
+
+    [Command("GetEntryPoint", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Get the entry point address of the current module or program.\r\nExample: GetEntryPoint")]
+    public static string GetEntryPoint()
+    {
+        try
+        {
+            nuint entryPoint = Bridge.DbgValFromString("entrypoint");
+            if (entryPoint != 0)
+            {
+                return $"Entry Point: 0x{entryPoint:X16}";
+            }
+            return "Entry point not found or not available.";
+        }
+        catch (Exception ex)
+        {
+            return $"[GetEntryPoint] Error: {ex.Message}";
+        }
+    }
+
     public static bool PatchWithNops ( string[] args )
     {
         return PatchWithNops ( args[0], Convert.ToInt32 ( args[1] ) );
