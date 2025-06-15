@@ -223,7 +223,7 @@ partial class Plugin {
     [Command ( "ExecuteDebuggerCommandDirect", DebugOnly = false )]
     public static bool ExecuteDebuggerCommandDirect ( string[] args )
     {
-        return ExecuteDebuggerCommandDirect ( args );
+        return Bridge.ExecuteDebuggerCommand ( string.Join ( " ", args ) );
     }
 
     //[Command("ReadMemory", DebugOnly = false)]
