@@ -511,6 +511,78 @@ partial class Plugin {
         }
     }
 
+    [Command("SetBreakpoint", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Set a breakpoint at the address. (Equivalent to bp [address])\r\nExample: SetBreakpoint address=0x12345678")]
+    public static string SetBreakpoint(string address)
+    {
+        try
+        {
+            if (DbgCmdExec($"bp {address}"))
+            {
+                return $"Breakpoint set at {address}";
+            }
+            return $"Failed to set breakpoint at {address}";
+        }
+        catch (Exception ex)
+        {
+            return $"[SetBreakpoint] Error: {ex.Message}";
+        }
+    }
+
+    [Command("ClearBreakpoint", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Remove a breakpoint at the address. (Equivalent to bc [address])\r\nExample: ClearBreakpoint address=0x12345678")]
+    public static string ClearBreakpoint(string address)
+    {
+        try
+        {
+            if (DbgCmdExec($"bc {address}"))
+            {
+                return $"Breakpoint cleared at {address}";
+            }
+            return $"Failed to clear breakpoint at {address}";
+        }
+        catch (Exception ex)
+        {
+            return $"[ClearBreakpoint] Error: {ex.Message}";
+        }
+    }
+
+    [Command("ToggleBreakpoint", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Enable/disable a breakpoint.\r\nExample: ToggleBreakpoint address=0x12345678")]
+    public static string ToggleBreakpoint(string address)
+    {
+        try
+        {
+            if (DbgCmdExec($"bpt {address}"))
+            {
+                return $"Breakpoint toggled at {address}";
+            }
+            return $"Failed to toggle breakpoint at {address}";
+        }
+        catch (Exception ex)
+        {
+            return $"[ToggleBreakpoint] Error: {ex.Message}";
+        }
+    }
+
+    [Command("SetHardwareBreakpoint", DebugOnly = true, MCPOnly = true,
+           MCPCmdDescription = "Set a hardware breakpoint. (Equivalent to bph [address])\r\nExample: SetHardwareBreakpoint address=0x12345678")]
+    public static string SetHardwareBreakpoint(string address)
+    {
+        try
+        {
+            if (DbgCmdExec($"bph {address}"))
+            {
+                return $"Hardware breakpoint set at {address}";
+            }
+            return $"Failed to set hardware breakpoint at {address}";
+        }
+        catch (Exception ex)
+        {
+            return $"[SetHardwareBreakpoint] Error: {ex.Message}";
+        }
+    }
+
     public static bool PatchWithNops ( string[] args )
     {
         return PatchWithNops ( args[0], Convert.ToInt32 ( args[1] ) );
