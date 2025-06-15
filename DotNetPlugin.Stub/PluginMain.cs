@@ -215,8 +215,7 @@ internal static class PluginMain {
     [DllExport("pluginit", CallingConvention.Cdecl)]
     public static bool pluginit(ref Plugins.PLUG_INITSTRUCT initStruct)
     {
-        if (!TryLoadPlugin(isInitial: true))
-        { return false; }
+        TryLoadPlugin(isInitial: true);
 
         initStruct.sdkVersion = Plugins.PLUG_SDKVERSION;
         initStruct.pluginVersion = PluginBase.PluginVersion;
