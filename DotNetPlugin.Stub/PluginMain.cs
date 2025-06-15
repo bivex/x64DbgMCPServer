@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using DotNetPlugin.NativeBindings.SDK;
+using RGiesecke.DllExport;
 
 namespace DotNetPlugin {
 /// <summary>
@@ -211,10 +212,10 @@ internal static class PluginMain {
     }
 #endif
 
-    [DllExport ( "pluginit", CallingConvention.Cdecl )]
-    public static bool pluginit ( ref Plugins.PLUG_INITSTRUCT initStruct )
+    [DllExport("pluginit", CallingConvention.Cdecl)]
+    public static bool pluginit(ref Plugins.PLUG_INITSTRUCT initStruct)
     {
-        if ( !TryLoadPlugin ( isInitial: true ) )
+        if (!TryLoadPlugin(isInitial: true))
         { return false; }
 
         initStruct.sdkVersion = Plugins.PLUG_SDKVERSION;
@@ -223,17 +224,17 @@ internal static class PluginMain {
         Session.PluginHandle = s_pluginHandle = initStruct.pluginHandle;
 
 #if ALLOW_UNLOADING
-        if ( !Plugins._plugin_registercommand ( s_pluginHandle, s_controlCommand, ControlCommand, false ) )
+        if (!Plugins._plugin_registercommand(s_pluginHandle, s_controlCommand, ControlCommand, false))
         {
-            PluginBase.LogError ( $"Failed to register the \"'{s_controlCommand}'\" command." );
+            PluginBase.LogError($"Failed to register the \"'{s_controlCommand}'\" command.");
             TryUnloadPlugin();
             return false;
         }
 #endif
 
-        if ( !Session.Init() )
+        if (!Session.Init())
         {
-            PluginBase.LogError ( "Failed to initialize the implementation assembly." );
+            PluginBase.LogError("Failed to initialize the implementation assembly.");
             TryUnloadPlugin();
             return false;
         }
@@ -241,15 +242,15 @@ internal static class PluginMain {
         return true;
     }
 
-    [DllExport ( "plugsetup", CallingConvention.Cdecl )]
-    private static void plugsetup ( ref Plugins.PLUG_SETUPSTRUCT setupStruct )
+    [DllExport("plugsetup", CallingConvention.Cdecl)]
+    private static void plugsetup(ref Plugins.PLUG_SETUPSTRUCT setupStruct)
     {
         s_setupStruct = setupStruct;
 
-        Session.Setup ( ref setupStruct );
+        Session.Setup(ref setupStruct);
     }
 
-    [DllExport ( "plugstop", CallingConvention.Cdecl )]
+    [DllExport("plugstop", CallingConvention.Cdecl)]
     private static bool plugstop()
     {
         var success = Session.Stop();
@@ -284,8 +285,8 @@ internal static class PluginMain {
     }
 #endif
 
-    [DllExport ( "CBMENUENTRY", CallingConvention.Cdecl )]
-    public static void CBMENUENTRY ( Plugins.CBTYPE cbType, ref Plugins.PLUG_CB_MENUENTRY info )
+    [DllExport("CBMENUENTRY", CallingConvention.Cdecl)]
+    public static void CBMENUENTRY(Plugins.CBTYPE cbType, ref Plugins.PLUG_CB_MENUENTRY info)
     {
         Session.OnMenuEntry ( ref info );
     }
