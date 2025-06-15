@@ -198,16 +198,28 @@ public class McpCommandDispatcher {
         return "object";
     }
 
+    /// <summary>
+    /// Converts a given object to the required parameter type.
+    /// This method handles conversions for primitive types, enums, GUIDs, and arrays.
+    /// It is designed to be robust in handling various input types that might come from
+    /// deserialized data.
+    /// </summary>
+    /// <param name="argValue">The value to convert.</param>
+    /// <param name="requiredType">The target type to convert to.</param>
+    /// <param name="paramName">The name of the parameter, used for crafting helpful error messages.</param>
+    /// <returns>The converted object.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a null value is provided for a non-nullable type.</exception>
+    /// <exception cref="InvalidCastException">Thrown when conversion is not possible.</exception>
     private object ConvertArgumentType ( object argValue, Type requiredType, string paramName )
     {
         if ( argValue == null )
         {
-            if ( requiredType.IsClass || Nullable.GetUnderlyingType ( requiredType ) != null )
+            if ( requiredType.IsValueType && Nullable.GetUnderlyingType ( requiredType ) == null )
             {
-                return null;
+                throw new ArgumentNullException ( paramName,
+                                                  $"Null provided for non-nullable parameter '{paramName}' of type {requiredType.Name}" );
             }
-            throw new ArgumentNullException ( paramName,
-                                              $"Null provided for non-nullable parameter '{paramName}' of type {requiredType.Name}" );
+            return null;
         }
 
         if ( requiredType.IsInstanceOfType ( argValue ) )
@@ -215,54 +227,14 @@ public class McpCommandDispatcher {
             return argValue;
         }
 
-        if ( requiredType == typeof ( int ) )
+        if ( requiredType.IsArray )
         {
-            return Convert.ToInt32 ( argValue );
+            if ( argValue is System.Collections.ICollection collection )
+            {
+                return ConvertArrayArgument ( collection, requiredType, paramName );
+            }
         }
-        if ( requiredType == typeof ( long ) )
-        {
-            return Convert.ToInt64 ( argValue );
-        }
-        if ( requiredType == typeof ( short ) )
-        {
-            return Convert.ToInt16 ( argValue );
-        }
-        if ( requiredType == typeof ( byte ) )
-        {
-            return Convert.ToByte ( argValue );
-        }
-        if ( requiredType == typeof ( uint ) )
-        {
-            return Convert.ToUInt32 ( argValue );
-        }
-        if ( requiredType == typeof ( ulong ) )
-        {
-            return Convert.ToUInt64 ( argValue );
-        }
-        if ( requiredType == typeof ( ushort ) )
-        {
-            return Convert.ToUInt16 ( argValue );
-        }
-        if ( requiredType == typeof ( sbyte ) )
-        {
-            return Convert.ToSByte ( argValue );
-        }
-        if ( requiredType == typeof ( float ) )
-        {
-            return Convert.ToSingle ( argValue );
-        }
-        if ( requiredType == typeof ( double ) )
-        {
-            return Convert.ToDouble ( argValue );
-        }
-        if ( requiredType == typeof ( decimal ) )
-        {
-            return Convert.ToDecimal ( argValue );
-        }
-        if ( requiredType == typeof ( bool ) )
-        {
-            return Convert.ToBoolean ( argValue );
-        }
+
         if ( requiredType == typeof ( Guid ) )
         {
             return Guid.Parse ( argValue.ToString() );
@@ -271,43 +243,6 @@ public class McpCommandDispatcher {
         if ( requiredType.IsEnum )
         {
             return System.Enum.Parse ( requiredType, argValue.ToString(), ignoreCase: true );
-        }
-
-        if ( requiredType.IsArray && argValue is System.Collections.ArrayList list )
-        {
-            var elementType = requiredType.GetElementType();
-            var typedArray = Array.CreateInstance ( elementType, list.Count );
-            for ( int j = 0; j < list.Count; j++ )
-            {
-                try
-                {
-                    typedArray.SetValue ( Convert.ChangeType ( list[j], elementType ), j );
-                }
-                catch ( Exception ex )
-                {
-                    throw new InvalidCastException (
-                        $"Cannot convert array element '{list[j]}' to type '{elementType.Name}' for parameter '{paramName}'.", ex );
-                }
-            }
-            return typedArray;
-        }
-        if ( requiredType.IsArray && argValue is object[] objArray )
-        {
-            var elementType = requiredType.GetElementType();
-            var typedArray = Array.CreateInstance ( elementType, objArray.Length );
-            for ( int j = 0; j < objArray.Length; j++ )
-            {
-                try
-                {
-                    typedArray.SetValue ( Convert.ChangeType ( objArray[j], elementType ), j );
-                }
-                catch ( Exception ex )
-                {
-                    throw new InvalidCastException (
-                        $"Cannot convert array element '{objArray[j]}' to type '{elementType.Name}' for parameter '{paramName}'.", ex );
-                }
-            }
-            return typedArray;
         }
 
         try
@@ -320,6 +255,39 @@ public class McpCommandDispatcher {
                 $"Cannot convert value '{argValue}' (type: {argValue.GetType().Name}) to required type '{requiredType.Name}' for parameter '{paramName}'.",
                 ex );
         }
+    }
+
+    /// <summary>
+    /// Converts a collection of objects into a typed array by converting each element.
+    /// </summary>
+    /// <param name="collection">The collection to convert, which can be an ArrayList or object[].</param>
+    /// <param name="requiredArrayType">The target array type (e.g., typeof(int[])).</param>
+    /// <param name="paramName">The name of the parameter for error reporting.</param>
+    /// <returns>A new array of the specified element type containing the converted elements.</returns>
+    private object ConvertArrayArgument ( System.Collections.ICollection collection, Type requiredArrayType, string paramName )
+    {
+        var elementType = requiredArrayType.GetElementType();
+        if ( elementType == null )
+        {
+            throw new InvalidOperationException ( $"Cannot determine element type for array '{paramName}'." );
+        }
+
+        var typedArray = Array.CreateInstance ( elementType, collection.Count );
+        int i = 0;
+        foreach ( var item in collection )
+        {
+            try
+            {
+                typedArray.SetValue ( ConvertArgumentType ( item, elementType, $"{paramName}[{i}]" ), i );
+            }
+            catch ( Exception ex )
+            {
+                throw new InvalidCastException (
+                    $"Cannot convert array element at index {i} for parameter '{paramName}'. See inner exception for details.", ex );
+            }
+            i++;
+        }
+        return typedArray;
     }
 }
 }
