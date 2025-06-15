@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>$(PluginAssemblyName).Impl</AssemblyName>
-    <RootNamespace>$(PluginRootNamespace)</RootNamespace>
+    <AssemblyName>x64DbgMCPServer.Impl</AssemblyName>
+    <RootNamespace>x64DbgMCPServer</RootNamespace>
     <TargetFramework>net472</TargetFramework>
     <Platforms>x86;x64</Platforms>
     <OutputPath>$(PluginOutputPath)</OutputPath>

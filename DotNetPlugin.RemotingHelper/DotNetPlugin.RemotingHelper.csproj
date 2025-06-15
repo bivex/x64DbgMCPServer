@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>$(PluginAssemblyName).RemotingHelper</AssemblyName>
+    <AssemblyName>x64DbgMCPServer.RemotingHelper</AssemblyName>
     <RootNamespace>DotNetPlugin</RootNamespace>
     <TargetFramework>net472</TargetFramework>
     <Platforms>x86;x64</Platforms>

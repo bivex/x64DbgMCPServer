@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Windows.Forms;
 using DotNetPlugin.NativeBindings.SDK;
-using DotNetPlugin.Properties;
+using x64DbgMCPServer.Properties;
 
 namespace DotNetPlugin
 {

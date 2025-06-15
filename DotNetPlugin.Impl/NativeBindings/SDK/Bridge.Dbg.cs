@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Runtime.InteropServices.ComTypes;
 
 namespace DotNetPlugin.NativeBindings.SDK
 {
@@ -300,9 +301,9 @@ namespace DotNetPlugin.NativeBindings.SDK
             public int Priority;           // THREADPRIORITY likely maps to int
             public int WaitReason;         // THREADWAITREASON likely maps to int - CORRECT ORDER
             public uint LastError;         // DWORD maps to uint - CORRECT ORDER
-            public FILETIME UserTime;      // CORRECT ORDER
-            public FILETIME KernelTime;    // CORRECT ORDER
-            public FILETIME CreationTime;  // CORRECT ORDER
+            public System.Runtime.InteropServices.ComTypes.FILETIME UserTime;      // CORRECT ORDER
+            public System.Runtime.InteropServices.ComTypes.FILETIME KernelTime;    // CORRECT ORDER
+            public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;  // CORRECT ORDER
             public ulong Cycles;           // ULONG64 maps to ulong (always 64-bit) - CORRECT ORDER
         }
 
