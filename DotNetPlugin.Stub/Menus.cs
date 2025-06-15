@@ -16,7 +16,7 @@ public sealed class Menus : IDisposable {
     {
         PluginHandle = pluginHandle;
 
-        All = new[]
+        AllMenus = new[]
         {
             Main = new Menu ( this, setupStruct.hMenu ),
             Disasm = new Menu ( this, setupStruct.hMenuDisasm ),
@@ -47,15 +47,15 @@ public sealed class Menus : IDisposable {
 
     internal int PluginHandle { get; }
 
-    public Menu Main; // main menu
-    public Menu Disasm; // disasm menu
-    public Menu Dump; // dump menu
-    public Menu Stack; // stack menu
-    public Menu Graph; // graph menu
-    public Menu Memmap; // memory map menu
-    public Menu Symmod; // symbol module menu
+    public Menu Main { get; } // main menu
+    public Menu Disasm { get; } // disasm menu
+    public Menu Dump { get; } // dump menu
+    public Menu Stack { get; } // stack menu
+    public Menu Graph { get; } // graph menu
+    public Menu Memmap { get; } // memory map menu
+    public Menu Symmod { get; } // symbol module menu
 
-    public IReadOnlyList<Menu> All { get; }
+    public IReadOnlyList<Menu> AllMenus { get; }
 
     internal int NextItemId() => ++_lastId;
 
@@ -63,7 +63,7 @@ public sealed class Menus : IDisposable {
 
     public void Clear()
     {
-        foreach ( var menu in All )
+        foreach ( var menu in AllMenus )
         { menu.Clear(); }
     }
 }
@@ -73,7 +73,7 @@ public sealed class MenuException : ApplicationException {
 }
 
 public abstract class MenuItemBase {
-    internal MenuItemBase ( Menu parent )
+    protected MenuItemBase ( Menu parent )
     {
         Parent = parent;
     }
