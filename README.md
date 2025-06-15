@@ -1,3 +1,11 @@
+# Fork 
+
+[Astyle config](https://github.com/nneesshh/astyle-extension)
+```
+--style=allman --indent=spaces=4 --min-conditional-indent=2 --max-continuation-indent=40 --align-pointer=type --attach-namespaces --attach-classes --indent-classes --indent-modifiers --indent-switches --indent-cases --indent-labels --indent-preproc-block --pad-oper --pad-comma --pad-paren --pad-paren-in --close-templates --break-closing-braces --break-one-line-headers --add-braces --add-one-line-braces --keep-one-line-statements --convert-tabs --attach-return-type --mode=cs
+
+```
+
 # X64Dbg MCP Server (plugin)
 This project is a starting point for building an MCP (Memory Command Protocol) server plugin for x96/x64/x32dbg https://github.com/x64dbg/x64dbg/ using C# on the classic Windows-only .NET Framework platform (No ASP.NET Core hosting required).
 

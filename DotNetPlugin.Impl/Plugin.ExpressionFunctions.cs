@@ -1,11 +1,9 @@
-namespace DotNetPlugin
-{
-    partial class Plugin
+namespace DotNetPlugin {
+partial class Plugin {
+    [ExpressionFunction]
+    public static nuint DotNetAdd ( nuint a, nuint b )
     {
-        [ExpressionFunction]
-        public static nuint DotNetAdd(nuint a, nuint b)
-        {
-            return a + b;
-        }
+        return a + b;
     }
+}
 }
