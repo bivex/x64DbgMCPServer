@@ -118,6 +118,42 @@ GetCallStack
 ```
 These commands return JSON or text-formatted output that's suitable for ingestion by AI models or integration scripts. Example:
 
+## Available Commands
+
+Here is a list of commands supported by the X64Dbg MCP Server plugin:
+
+*   **StartMCPServer**: Start the MCP server.
+*   **StopMCPServer**: Stop the MCP server.
+*   **ExecuteDebuggerCommand**: Executes a debugger command synchronously using x64dbg's command engine. Example: `ExecuteDebuggerCommand command=init c:\Path\To\Program.exe\r\nNote: See ListDebuggerCommands for list of applicable commands. Once a program is loaded new available functions can be viewed from the tools/list`
+*   **ListDebuggerCommands**: Example: `ListDebuggerCommands`
+*   **DbgValFromString**: Example: `DbgValFromString value=$pid`
+*   **WriteMemToAddress**: Example: `WriteMemToAddress address=0x12345678, byteString=0F FF 90`
+*   **CommentOrLabelAtAddress**: Example: `CommentOrLabelAtAddress address=0x12345678, value=LabelTextGoeshere, mode=Label\r\nExample: CommentOrLabelAtAddress address=0x12345678, value=LabelTextGoeshere, mode=Comment\r\n`
+*   **SetBreakpoint**: Set a breakpoint at the address. (Equivalent to bp [address]) Example: `SetBreakpoint address=0x12345678`
+*   **ClearBreakpoint**: Remove a breakpoint at the address. (Equivalent to bc [address]) Example: `ClearBreakpoint address=0x12345678`
+*   **ToggleBreakpoint**: Enable/disable a breakpoint. Example: `ToggleBreakpoint address=0x12345678`
+*   **SetHardwareBreakpoint**: Set a hardware breakpoint. (Equivalent to bph [address]) Example: `SetHardwareBreakpoint address=0x12345678`
+*   **Run**: Continue program execution. (Equivalent to run or g) Example: `Run`
+*   **Pause**: Pause program execution. Example: `Pause`
+*   **StepInto**: Step into function. (Equivalent to sti) Example: `StepInto`
+*   **StepOver**: Step over function. (Equivalent to sto) Example: `StepOver`
+*   **StepOut**: Step out of current function. (Equivalent to sso) Example: `StepOut`
+*   **AttachToProcess**: Attach to an existing process by its PID. Example: `AttachToProcess pid=1234`
+*   **DetachFromProcess**: Detach from the current process. Example: `DetachFromProcess`
+*   **TerminateProcess**: Terminate the debugged process. (Equivalent to kill) Example: `TerminateProcess`
+*   **SwitchThread**: Switch to the specified thread. Example: `SwitchThread threadId=123`
+*   **FindPattern**: Search for a given byte pattern in memory. Example: `FindPattern pattern=90 89 78`
+*   **GetModuleInfo**: Get detailed information about a specific module (address, size, entry point). Example: `GetModuleInfo moduleName=kernel32.dll`
+*   **GetEntryPoint**: Get the entry point address of the current module or program. Example: `GetEntryPoint`
+*   **GetLabel**: Example: `GetLabel addressStr=0x12345678`
+*   **GetAllModulesFromMemMap**: Example: `GetAllModulesFromMemMap`
+*   **GetCallStack**: Example: `GetCallStack
+Example: GetCallStack, maxFrames=32`
+*   **GetAllActiveThreads**: Example: `GetAllActiveThreads`
+*   **GetAllRegisters**: Example: `GetAllRegisters`
+*   **ReadDismAtAddress**: Example: `ReadDismAtAddress address=0x12345678, byteCount=100`
+*   **DumpModuleToFile**: Example: `DumpModuleToFile pfilepath=C:\Output.txt`
+
 ## Debugging
 The `DotNetPlugin.Impl` project includes build post-commands for faster debugging. Update them to reflect the correct path to your x64dbg installation. Upon rebuilding, x64dbg will auto-load the new plugin, and you can reattach to the x64dbg instance if needed.
 ```
