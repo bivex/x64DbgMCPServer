@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>$(PluginAssemblyName)</AssemblyName>
-    <RootNamespace>$(PluginRootNamespace)</RootNamespace>
+    <AssemblyName>x64DbgMCPServer</AssemblyName>
+    <RootNamespace>x64DbgMCPServer</RootNamespace>
     <TargetFramework>net472</TargetFramework>
     <Platforms>x86;x64</Platforms>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -9,6 +9,11 @@
     <DebugSymbols>true</DebugSymbols>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyTitle>$(PluginName)</AssemblyTitle>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>pdbonly</DebugType>
+    <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Platform)'=='x86'">
