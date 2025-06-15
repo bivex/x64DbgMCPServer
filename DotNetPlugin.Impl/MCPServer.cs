@@ -21,12 +21,20 @@ internal sealed class SimpleMcpServer {
     private readonly Dictionary<string, MethodInfo> _commands = new Dictionary<string, MethodInfo>
     ( StringComparer.OrdinalIgnoreCase );
     private readonly Type _targetType;
-    internal bool IsActivelyDebugging = false;
-    internal bool OutputPlugingDebugInformation = true;
+    private bool _isActivelyDebugging = false;
+    private bool _outputPluginDebugInformation = true;
+
+    internal bool IsActivelyDebugging
+    {
+        get => _isActivelyDebugging;
+        set => _isActivelyDebugging = value;
+    }
+    private bool OutputPluginDebugInformation => _outputPluginDebugInformation;
 
     internal McpCommandDispatcher CommandDispatcher => _commandDispatcher;
 
     private readonly McpRpcProcessor _rpcProcessor;
+    private readonly SseSessionManager _sseSessionManager = new SseSessionManager();
 
     internal SimpleMcpServer ( Type commandSourceType )
     {
@@ -52,14 +60,14 @@ internal sealed class SimpleMcpServer {
             _commandDispatcher,
             SendSseResult,
             (sessionId, id, code, message, data) => SendSseError(sessionId, id, code, message, data),
-            IsSseSessionValid,
-            () => OutputPlugingDebugInformation,
+            _sseSessionManager.IsSseSessionValid,
+            () => OutputPluginDebugInformation,
             () => IsActivelyDebugging );
     }
 
     private void OutputDebugInforamtion()
     {
-        if ( OutputPlugingDebugInformation )
+        if ( OutputPluginDebugInformation )
         { }
     }
 
@@ -145,7 +153,6 @@ internal sealed class SimpleMcpServer {
     }
 
     static bool pDebug = false;
-    private static readonly Dictionary<string, StreamWriter> _sseSessions = new Dictionary<string, StreamWriter>();
 
     private async Task OnRequest ( HttpListenerContext ctx )
     {
@@ -233,7 +240,7 @@ internal sealed class SimpleMcpServer {
     private async Task HandleMessageRequest ( HttpListenerContext ctx )
     {
         var sessionId = ctx.Request.QueryString["sessionId"];
-        if ( !IsSseSessionValid ( sessionId ) )
+        if ( !_sseSessionManager.IsSseSessionValid ( sessionId ) )
         {
             await SendBadRequestAsync ( ctx, $"Invalid or missing sessionId '{sessionId}'" );
             return;
@@ -248,23 +255,11 @@ internal sealed class SimpleMcpServer {
         catch ( Exception acceptEx )
         {
             Console.WriteLine ( $"Error sending 202 Accepted: {acceptEx.Message}" );
-            CleanupSseSession ( sessionId );
+            _sseSessionManager.CleanupSseSession ( sessionId );
             return;
         }
 
         _rpcProcessor.ProcessRpcRequest ( sessionId, requestBody );
-    }
-
-    private bool IsSseSessionValid ( string sessionId )
-    {
-        if ( string.IsNullOrWhiteSpace ( sessionId ) )
-        {
-            return false;
-        }
-        lock ( _sseSessions )
-        {
-            return _sseSessions.ContainsKey ( sessionId );
-        }
     }
 
     private async Task SendBadRequestAsync ( HttpListenerContext ctx, string logMessage )
@@ -331,13 +326,13 @@ internal sealed class SimpleMcpServer {
         string sessionId = "";
         try
         {
-            sessionId = GenerateSessionId();
+            sessionId = _sseSessionManager.GenerateSessionId();
             var writer = new StreamWriter ( ctx.Response.OutputStream, new UTF8Encoding ( false ), 1024, leaveOpen: true )
             {
                 AutoFlush = true
             };
 
-            if ( RegisterSseSession ( sessionId, writer ) )
+            if ( _sseSessionManager.RegisterSseSession ( sessionId, writer ) )
             {
                 Console.WriteLine ( $"SSE session started: {sessionId}" );
                 string messagePath = $"/message?sessionId={sessionId}";
@@ -362,32 +357,8 @@ internal sealed class SimpleMcpServer {
             ctx.Response.OutputStream.Close();
             if ( !string.IsNullOrEmpty ( sessionId ) )
             {
-                CleanupSseSession ( sessionId );
+                _sseSessionManager.CleanupSseSession ( sessionId );
             }
-        }
-    }
-
-    private string GenerateSessionId()
-    {
-        using ( var rng = RandomNumberGenerator.Create() )
-        {
-            byte[] randomBytes = new byte[16];
-            rng.GetBytes ( randomBytes );
-            return Convert.ToBase64String ( randomBytes ).TrimEnd ( '=' ).Replace ( '+', '-' ).Replace ( '/', '_' );
-        }
-    }
-
-    private bool RegisterSseSession ( string sessionId, StreamWriter writer )
-    {
-        lock ( _sseSessions )
-        {
-            if ( _sseSessions.ContainsKey ( sessionId ) )
-            {
-                Console.WriteLine ( $"WARNING: Session ID collision detected for {sessionId}" );
-                return false;
-            }
-            _sseSessions[sessionId] = writer;
-            return true;
         }
     }
 
@@ -419,7 +390,7 @@ internal sealed class SimpleMcpServer {
             result = toolList
         };
 
-        var json = _jsonSerializer.Serialize ( legacyResponse );
+        var json = _JsonSerializer.Serialize ( legacyResponse );
         var buffer = Encoding.UTF8.GetBytes ( json );
         ctx.Response.ContentType = "application/json; charset=utf-8";
         ctx.Response.ContentLength64 = buffer.Length;
@@ -456,86 +427,126 @@ internal sealed class SimpleMcpServer {
     private void SendSseResult ( string sessionId, object id, object result )
     {
         var response = new JsonRpcResponse<object> { id = id, result = result };
-        string jsonData = _jsonSerializer.Serialize ( response );
-        SendData ( sessionId, jsonData );
+        string jsonData = _JsonSerializer.Serialize ( response );
+        _sseSessionManager.SendData ( sessionId, jsonData );
     }
 
     private void SendSseError ( string sessionId, object id, int code, string message, object data = null )
     {
         var errorPayload = new JsonRpcError { code = code, message = message, data = data };
         var response = new JsonRpcErrorResponse { id = id, error = errorPayload };
-        string jsonData = _jsonSerializer.Serialize ( response );
-        SendData ( sessionId, jsonData );
+        string jsonData = _JsonSerializer.Serialize ( response );
+        _sseSessionManager.SendData ( sessionId, jsonData );
     }
 
-    private void SendData ( string sessionId, string jsonData )
+    private static readonly JavaScriptSerializer _JsonSerializer = new JavaScriptSerializer();
+
+    // Nested class for SSE session management
+    private class SseSessionManager
     {
-        try
+        private readonly Dictionary<string, StreamWriter> _sseSessions = new Dictionary<string, StreamWriter>();
+
+        public string GenerateSessionId()
         {
-            StreamWriter writer;
-            bool sessionExists;
+            using ( var rng = RandomNumberGenerator.Create() )
+            {
+                byte[] randomBytes = new byte[16];
+                rng.GetBytes ( randomBytes );
+                return Convert.ToBase64String ( randomBytes ).TrimEnd ( '=' ).Replace ( '+', '-' ).Replace ( '/', '_' );
+            }
+        }
+
+        public bool RegisterSseSession ( string sessionId, StreamWriter writer )
+        {
             lock ( _sseSessions )
             {
-                sessionExists = _sseSessions.TryGetValue ( sessionId, out writer );
-            }
-
-            if ( sessionExists && writer != null )
-            {
-                lock ( writer )
+                if ( _sseSessions.ContainsKey ( sessionId ) )
                 {
-                    writer.Write ( $"data: {jsonData}\n\n" );
-                    writer.Flush();
-                    if ( pDebug )
+                    Console.WriteLine ( $"WARNING: Session ID collision detected for {sessionId}" );
+                    return false;
+                }
+                _sseSessions[sessionId] = writer;
+                return true;
+            }
+        }
+
+        public bool IsSseSessionValid ( string sessionId )
+        {
+            if ( string.IsNullOrWhiteSpace ( sessionId ) )
+            {
+                return false;
+            }
+            lock ( _sseSessions )
+            {
+                return _sseSessions.ContainsKey ( sessionId );
+            }
+        }
+
+        public void SendData ( string sessionId, string jsonData )
+        {
+            try
+            {
+                StreamWriter writer;
+                bool sessionExists;
+                lock ( _sseSessions )
+                {
+                    sessionExists = _sseSessions.TryGetValue ( sessionId, out writer );
+                }
+
+                if ( sessionExists && writer != null )
+                {
+                    lock ( writer )
                     {
-                        Console.WriteLine ( $"SSE >>> Session {sessionId}: {jsonData}" );
+                        writer.Write ( $"data: {jsonData}\n\n" );
+                        writer.Flush();
+                        // Optionally add debug output here if needed
                     }
                 }
+                else
+                {
+                    Console.WriteLine ( $"Error: SSE Session {sessionId} not found or writer is null when trying to send data." );
+                }
             }
-            else
+            catch ( ObjectDisposedException )
             {
-                Console.WriteLine ( $"Error: SSE Session {sessionId} not found or writer is null when trying to send data." );
+                Console.WriteLine ( $"SSE Session {sessionId} writer was disposed. Cleaning up." );
+                CleanupSseSession ( sessionId );
+            }
+            catch ( IOException ioEx )
+            {
+                Console.WriteLine ( $"SSE Write Error for session {sessionId}: {ioEx.Message}. Cleaning up." );
+                CleanupSseSession ( sessionId );
+            }
+            catch ( Exception ex )
+            {
+                Console.WriteLine ( $"Unexpected error sending SSE data for session {sessionId}: {ex}" );
+                CleanupSseSession ( sessionId );
             }
         }
-        catch ( ObjectDisposedException )
-        {
-            Console.WriteLine ( $"SSE Session {sessionId} writer was disposed. Cleaning up." );
-            CleanupSseSession ( sessionId );
-        }
-        catch ( IOException ioEx )
-        {
-            Console.WriteLine ( $"SSE Write Error for session {sessionId}: {ioEx.Message}. Cleaning up." );
-            CleanupSseSession ( sessionId );
-        }
-        catch ( Exception ex )
-        {
-            Console.WriteLine ( $"Unexpected error sending SSE data for session {sessionId}: {ex}" );
-            CleanupSseSession ( sessionId );
-        }
-    }
 
-    private void CleanupSseSession ( string sessionId )
-    {
-        lock ( _sseSessions )
+        public void CleanupSseSession ( string sessionId )
         {
-            if ( _sseSessions.TryGetValue ( sessionId, out StreamWriter writer ) )
+            StreamWriter writer = null;
+            lock ( _sseSessions )
             {
-                try
-                {
-                    writer?.Dispose();
-                }
-                catch ( Exception ex )
-                {
-                    Console.WriteLine ( $"Error disposing writer for session {sessionId}: {ex.Message}" );
-                }
-                finally
+                if ( _sseSessions.TryGetValue ( sessionId, out writer ) )
                 {
                     _sseSessions.Remove ( sessionId );
                     Console.WriteLine ( $"Removed SSE session {sessionId}." );
                 }
             }
+            if (writer != null)
+            {
+                try
+                {
+                    writer.Dispose();
+                }
+                catch ( Exception ex )
+                {
+                    Console.WriteLine ( $"Error disposing writer for session {sessionId}: {ex.Message}" );
+                }
+            }
         }
     }
-
-    private static readonly JavaScriptSerializer _jsonSerializer = new JavaScriptSerializer();
 }
 }
