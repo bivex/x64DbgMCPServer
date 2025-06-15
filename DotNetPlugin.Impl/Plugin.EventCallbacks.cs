@@ -105,7 +105,14 @@ partial class Plugin {
     [EventCallback ( Plugins.CBTYPE.CB_BREAKPOINT )]
     public static void Breakpoint ( ref Plugins.PLUG_CB_BREAKPOINT info )
     {
-        LogInfo ( $"Breakpoint " + info.breakpoint.Value.addr.ToHexString() + " in " + info.breakpoint.Value.mod );
+        if (info.breakpoint.HasValue)
+        {
+            LogInfo ( $"Breakpoint " + info.breakpoint.Value.addr.ToHexString() + " in " + info.breakpoint.Value.mod );
+        }
+        else
+        {
+            LogInfo ( "Breakpoint event received, but info.breakpoint is null." );
+        }
     }
 
     [EventCallback ( Plugins.CBTYPE.CB_SYSTEMBREAKPOINT )]

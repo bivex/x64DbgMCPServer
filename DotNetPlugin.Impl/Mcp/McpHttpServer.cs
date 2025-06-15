@@ -99,7 +99,8 @@ public class McpHttpServer {
 
         if ( RequestReceived != null )
         {
-            await RequestReceived.Invoke ( ctx );
+            var handler = RequestReceived;
+            await handler.Invoke ( ctx );
         }
         else
         {
