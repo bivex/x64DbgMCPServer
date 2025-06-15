@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using DotNetPlugin.NativeBindings;
 using DotNetPlugin.NativeBindings.SDK;
@@ -102,9 +103,14 @@ public class PluginBase : IPlugin {
     void IPlugin.OnMenuEntry ( ref Plugins.PLUG_CB_MENUENTRY info )
     {
         MenuItem menuItem;
-        lock ( MenusSyncObj )
+        Monitor.Enter ( MenusSyncObj );
+        try
         {
             menuItem = _menus.GetMenuItemById ( info.hEntry );
+        }
+        finally
+        {
+            Monitor.Exit ( MenusSyncObj );
         }
         menuItem?.Handler ( menuItem );
     }

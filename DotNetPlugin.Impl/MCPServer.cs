@@ -579,107 +579,17 @@ class SimpleMcpServer {
 
         try
         {
-            if ( !json.TryGetValue ( "params", out object paramsObj ) || ! ( paramsObj is Dictionary<string, object> paramsDict ) )
+            (promptName, arguments) = GetPromptRequestParameters(json, sessionId, id);
+
+            promptInfo = GetPromptInfo(promptName, sessionId, id);
+            if (promptInfo == null)
             {
-                throw new ArgumentException ( "Invalid or missing 'params' object for prompts/get" );
+                return; // Error already sent by GetPromptInfo
             }
 
-            if ( !paramsDict.TryGetValue ( "name", out object nameObj ) || ! ( nameObj is string )
-                    || string.IsNullOrWhiteSpace ( ( string ) nameObj ) )
-            {
-                throw new ArgumentException ( "Invalid or missing 'name' in prompts/get params" );
-            }
-            promptName = ( string ) nameObj;
+            ValidatePromptArguments(promptInfo, arguments, promptName, sessionId, id);
 
-            if ( paramsDict.TryGetValue ( "arguments", out object argsObj ) && argsObj is Dictionary<string, object> argsDict )
-            {
-                arguments = argsDict;
-            }
-            else
-            {
-                arguments = new Dictionary<string, object> ( StringComparer.OrdinalIgnoreCase );
-            }
-
-            if ( pDebug )
-            {
-                Console.WriteLine (
-                    $"Handling prompts/get: {promptName} with args: {(arguments.Count > 0 ? _jsonSerializer.Serialize(arguments) : "None")}" );
-            }
-
-            lock ( _prompts )
-            {
-                promptInfo = _prompts.FirstOrDefault ( p => p.name.Equals ( promptName, StringComparison.OrdinalIgnoreCase ) );
-            }
-
-            if ( promptInfo == null )
-            {
-                SendSseError ( sessionId, id, -32601, $"Prompt not found: {promptName}" );
-                return;
-            }
-
-            if ( promptInfo.arguments != null )
-            {
-                foreach ( var requiredArg in promptInfo.arguments.Where ( a => a.required == true ) )
-                {
-                    object argValue = null;
-                    if ( arguments == null || !arguments.TryGetValue ( requiredArg.name, out argValue ) || argValue == null )
-                    {
-                        throw new ArgumentException ( $"Missing required argument '{requiredArg.name}' for prompt '{promptName}'." );
-                    }
-                }
-            }
-
-            var generatedMessages = new List<object>();
-            if ( promptInfo.messageTemplates != null )
-            {
-                foreach ( var template in promptInfo.messageTemplates )
-                {
-                    string originalText = template.content?.text;
-                    string substitutedText = originalText ?? "";
-
-                    if ( !string.IsNullOrEmpty ( substitutedText ) && promptInfo.arguments != null )
-                    {
-                        foreach ( var argDef in promptInfo.arguments )
-                        {
-                            string placeholder = $"{{{argDef.name}}}";
-                            if ( substitutedText.Contains ( placeholder ) )
-                            {
-                                object argValueObj = null;
-                                string actualArgValueString = "";
-
-                                if ( arguments != null && arguments.TryGetValue ( argDef.name, out argValueObj ) && argValueObj != null )
-                                {
-                                    actualArgValueString = Convert.ToString ( argValueObj );
-                                }
-                                else if ( argDef.required != true )
-                                {
-                                    actualArgValueString = "";
-                                }
-
-                                substitutedText = substitutedText.Replace ( placeholder, actualArgValueString );
-                            }
-                        }
-
-                        string maxLengthPlaceholder = "{maxLengthPlaceholder}";
-                        if ( substitutedText.Contains ( maxLengthPlaceholder ) )
-                        {
-                            object maxLengthObj = null;
-                            string maxLengthText = "";
-                            if ( arguments != null && arguments.TryGetValue ( "maxLength", out maxLengthObj ) && maxLengthObj != null )
-                            {
-                                maxLengthText = $" (max length: {maxLengthObj})";
-                            }
-                            substitutedText = substitutedText.Replace ( maxLengthPlaceholder, maxLengthText );
-                        }
-                    }
-
-                    generatedMessages.Add ( new FinalPromptMessage
-                    {
-                        role = template.role,
-                        content = new FinalPromptContent { type = template.content?.type ?? "text", text = substitutedText }
-                    } );
-                }
-            }
+            var generatedMessages = GeneratePromptMessages(promptInfo, arguments);
 
             var result = new PromptGetResult
             {
@@ -700,6 +610,124 @@ class SimpleMcpServer {
             Console.WriteLine ( $"Error handling prompts/get for '{promptName ?? "unknown"}' (Session: {sessionId}): {ex}" );
             SendSseError ( sessionId, id, -32603, $"Internal error processing prompt '{promptName ?? "unknown"}': {ex.Message}" );
         }
+    }
+
+    private (string promptName, Dictionary<string, object> arguments) GetPromptRequestParameters(Dictionary<string, object> json, string sessionId, object id)
+    {
+        if (!json.TryGetValue("params", out object paramsObj) || !(paramsObj is Dictionary<string, object> paramsDict))
+        {
+            throw new ArgumentException("Invalid or missing 'params' object for prompts/get");
+        }
+
+        if (!paramsDict.TryGetValue("name", out object nameObj) || !(nameObj is string)
+                || string.IsNullOrWhiteSpace((string)nameObj))
+        {
+            throw new ArgumentException("Invalid or missing 'name' in prompts/get params");
+        }
+        string promptName = (string)nameObj;
+
+        Dictionary<string, object> arguments = null;
+        if (paramsDict.TryGetValue("arguments", out object argsObj) && argsObj is Dictionary<string, object> argsDict)
+        {
+            arguments = argsDict;
+        }
+        else
+        {
+            arguments = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (pDebug)
+        {
+            Console.WriteLine(
+                $"Handling prompts/get: {promptName} with args: {(arguments.Count > 0 ? _jsonSerializer.Serialize(arguments) : "None")}");
+        }
+        return (promptName, arguments);
+    }
+
+    private PromptInfo GetPromptInfo(string promptName, string sessionId, object id)
+    {
+        PromptInfo promptInfo = null;
+        lock (_prompts)
+        {
+            promptInfo = _prompts.FirstOrDefault(p => p.name.Equals(promptName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (promptInfo == null)
+        {
+            SendSseError(sessionId, id, -32601, $"Prompt not found: {promptName}");
+        }
+        return promptInfo;
+    }
+
+    private void ValidatePromptArguments(PromptInfo promptInfo, Dictionary<string, object> arguments, string promptName, string sessionId, object id)
+    {
+        if (promptInfo.arguments != null)
+        {
+            foreach (var requiredArg in promptInfo.arguments.Where(a => a.required == true))
+            {
+                object argValue = null;
+                if (arguments == null || !arguments.TryGetValue(requiredArg.name, out argValue) || argValue == null)
+                {
+                    throw new ArgumentException($"Missing required argument '{requiredArg.name}' for prompt '{promptName}'.");
+                }
+            }
+        }
+    }
+
+    private List<object> GeneratePromptMessages(PromptInfo promptInfo, Dictionary<string, object> arguments)
+    {
+        var generatedMessages = new List<object>();
+        if (promptInfo.messageTemplates != null)
+        {
+            foreach (var template in promptInfo.messageTemplates)
+            {
+                string originalText = template.content?.text;
+                string substitutedText = originalText ?? "";
+
+                if (!string.IsNullOrEmpty(substitutedText) && promptInfo.arguments != null)
+                {
+                    foreach (var argDef in promptInfo.arguments)
+                    {
+                        string placeholder = $"{{{argDef.name}}}";
+                        if (substitutedText.Contains(placeholder))
+                        {
+                            object argValueObj = null;
+                            string actualArgValueString = "";
+
+                            if (arguments != null && arguments.TryGetValue(argDef.name, out argValueObj) && argValueObj != null)
+                            {
+                                actualArgValueString = Convert.ToString(argValueObj);
+                            }
+                            else if (argDef.required != true)
+                            {
+                                actualArgValueString = "";
+                            }
+
+                            substitutedText = substitutedText.Replace(placeholder, actualArgValueString);
+                        }
+                    }
+
+                    string maxLengthPlaceholder = "{maxLengthPlaceholder}";
+                    if (substitutedText.Contains(maxLengthPlaceholder))
+                    {
+                        object maxLengthObj = null;
+                        string maxLengthText = "";
+                        if (arguments != null && arguments.TryGetValue("maxLength", out maxLengthObj) && maxLengthObj != null)
+                        {
+                            maxLengthText = $" (max length: {maxLengthObj})";
+                        }
+                        substitutedText = substitutedText.Replace(maxLengthPlaceholder, maxLengthText);
+                    }
+                }
+
+                generatedMessages.Add(new FinalPromptMessage
+                {
+                    role = template.role,
+                    content = new FinalPromptContent { type = template.content?.type ?? "text", text = substitutedText }
+                });
+            }
+        }
+        return generatedMessages;
     }
 
     private void HandleResourcesList ( string sessionId, object id )

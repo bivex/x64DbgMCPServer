@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using DotNetPlugin.NativeBindings.Win32;
+using System.Threading;
 
 namespace DotNetPlugin.NativeBindings.SDK {
 // https://github.com/x64dbg/x64dbg/blob/development/src/dbg/_plugins.h
@@ -63,12 +64,13 @@ public static class Plugins {
             }
         };
 
-        lock ( _pluginCallbacks )
-        {
-            // The CLR protects the delegate from being GC'd only for the duration of the call, so we need to keep a reference to it until unregistration.
+        Monitor.Enter ( _pluginCallbacks );
+        try {
             _pluginCallbacks[ ( int ) cbType] = callback;
 
             _plugin_registercallback_native ( pluginHandle, cbType, callback );
+        } finally {
+            Monitor.Exit ( _pluginCallbacks );
         }
     }
 
@@ -80,14 +82,16 @@ public static class Plugins {
         if ( cbType < 0 || _pluginCallbacks.Length <= ( int ) cbType )
         { throw new ArgumentOutOfRangeException ( nameof ( cbType ) ); }
 
-        lock ( _pluginCallbacks )
-        {
+        Monitor.Enter ( _pluginCallbacks );
+        try {
             var success = _plugin_unregistercallback_native ( pluginHandle, cbType );
 
             if ( success )
             { _pluginCallbacks[ ( int ) cbType] = null; }
 
             return success;
+        } finally {
+            Monitor.Exit ( _pluginCallbacks );
         }
     }
 
@@ -137,8 +141,8 @@ public static class Plugins {
             }
         };
 
-        lock ( _commandCallbacks )
-        {
+        Monitor.Enter ( _commandCallbacks );
+        try {
             // The CLR protects the delegate from being GC'd only for the duration of the call, so we need to keep a reference to it until unregistration.
             var success = _plugin_registercommand_native ( pluginHandle, command, callback, debugonly );
 
@@ -146,6 +150,8 @@ public static class Plugins {
             { _commandCallbacks[command] = callback; }
 
             return success;
+        } finally {
+            Monitor.Exit ( _commandCallbacks );
         }
     }
 
@@ -158,14 +164,16 @@ public static class Plugins {
         if ( command == null )
         { throw new ArgumentNullException ( nameof ( command ) ); }
 
-        lock ( _commandCallbacks )
-        {
+        Monitor.Enter ( _commandCallbacks );
+        try {
             var success = _plugin_unregistercommand_native ( pluginHandle, command );
 
             if ( success )
             { _commandCallbacks.Remove ( command ); }
 
             return success;
+        } finally {
+            Monitor.Exit ( _commandCallbacks );
         }
     }
 
@@ -191,8 +199,8 @@ public static class Plugins {
         var userdataHandle = userdata != null ? GCHandle.Alloc ( userdata ) : default;
         try
         {
-            lock ( _expressionFunctionCallbacks )
-            {
+            Monitor.Enter ( _expressionFunctionCallbacks );
+            try {
                 // The CLR protects the delegate from being GC'd only for the duration of the call, so we need to keep a reference to it until unregistration.
                 var success = _plugin_registerexprfunction_native ( pluginHandle, name, argc, callback,
                               GCHandle.ToIntPtr ( userdataHandle ) );
@@ -201,6 +209,8 @@ public static class Plugins {
                 { _expressionFunctionCallbacks[name] = ( callback, userdataHandle ); }
 
                 return success;
+            } finally {
+                Monitor.Exit ( _expressionFunctionCallbacks );
             }
         }
         catch
@@ -283,8 +293,8 @@ public static class Plugins {
         if ( name == null )
         { throw new ArgumentNullException ( nameof ( name ) ); }
 
-        lock ( _expressionFunctionCallbacks )
-        {
+        Monitor.Enter ( _expressionFunctionCallbacks );
+        try {
             var success = _plugin_unregisterexprfunction_native ( pluginHandle, name );
 
             if ( success )
@@ -299,6 +309,8 @@ public static class Plugins {
             }
 
             return success;
+        } finally {
+            Monitor.Exit ( _expressionFunctionCallbacks );
         }
     }
 

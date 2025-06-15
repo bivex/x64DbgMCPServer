@@ -39,39 +39,66 @@ partial class Plugin {
     {
         var addr = args.Length >= 2 ? Bridge.DbgValFromString ( args[1] ) : Bridge.DbgValFromString ( "cip" );
         Console.WriteLine ( $"addr: {addr.ToPtrString()}" );
-        var modinfo = new Module.ModuleInfo();
-        if ( !Module.InfoFromAddr ( addr, ref modinfo ) )
+
+        Module.ModuleInfo modinfo;
+        if (!TryGetModuleInfo(addr, out modinfo))
         {
-            Console.Error.WriteLine ( $"Module.InfoFromAddr failed..." );
+            Console.Error.WriteLine($"Module.InfoFromAddr failed for address {addr.ToPtrString()}...");
             return false;
         }
-        Console.WriteLine ( $"InfoFromAddr success, base: {modinfo.@base.ToPtrString()}" );
-        var hProcess = Bridge.DbgValFromString ( "$hProcess" );
+        Console.WriteLine($"InfoFromAddr success, base: {modinfo.@base.ToPtrString()}");
+
+        string fileName = ShowSaveFileDialogForModule(modinfo.name);
+        if (string.IsNullOrEmpty(fileName))
+        {
+            Console.WriteLine("File save dialog cancelled.");
+            return false;
+        }
+
+        nuint hProcess = Bridge.DbgValFromString("$hProcess");
+        if (!PerformProcessDump(hProcess, modinfo.@base, fileName, addr))
+        {
+            Console.Error.WriteLine($"DumpProcess failed for module {modinfo.name}...");
+            return false;
+        }
+
+        Console.WriteLine($"Dumping done!");
+        return true;
+    }
+
+    private static bool TryGetModuleInfo(nuint address, out Module.ModuleInfo modInfo)
+    {
+        modInfo = new Module.ModuleInfo();
+        return Module.InfoFromAddr(address, ref modInfo);
+    }
+
+    private static string ShowSaveFileDialogForModule(string moduleName)
+    {
+        string fileName = null;
         var saveFileDialog = new SaveFileDialog
         {
             Filter = "Executables (*.dll,*.exe)|*.exe|All Files (*.*)|*.*",
             RestoreDirectory = true,
-            FileName = modinfo.name
+            FileName = moduleName
         };
-        using ( saveFileDialog )
+
+        var t = new Thread(() =>
         {
-            var result = DialogResult.Cancel;
-            var t = new Thread ( () => result = saveFileDialog.ShowDialog() );
-            t.SetApartmentState ( ApartmentState.STA );
-            t.Start();
-            t.Join();
-            if ( result == DialogResult.OK )
+            if (saveFileDialog.ShowDialog() == DialogResult.OK)
             {
-                string fileName = saveFileDialog.FileName;
-                if ( !TitanEngine.DumpProcess ( ( nint ) hProcess, ( nint ) modinfo.@base, fileName, addr ) )
-                {
-                    Console.Error.WriteLine ( $"DumpProcess failed..." );
-                    return false;
-                }
-                Console.WriteLine ( $"Dumping done!" );
+                fileName = saveFileDialog.FileName;
             }
-        }
-        return true;
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+        t.Join();
+
+        return fileName;
+    }
+
+    private static bool PerformProcessDump(nuint hProcess, nuint baseAddress, string fileName, nuint entryPoint)
+    {
+        return TitanEngine.DumpProcess((nint)hProcess, (nint)baseAddress, fileName, entryPoint);
     }
 
     //[Command("DotNetModuleEnum", DebugOnly = true)]
@@ -817,10 +844,8 @@ partial class Plugin {
     // Function returns List of tuples: (Module Name, Full Path, Base Address, Total Size)
     public static List< ( string Name, string Path, nuint Base, nuint Size ) > GetAllModulesFromMemMapFunc()
     {
-        // Update the list's tuple definition to include Path (string)
         var finalResult = new List< ( string Name, string Path, nuint Base, nuint Size ) >();
         MEMMAP_NATIVE nativeMemMap = new MEMMAP_NATIVE();
-        var allocationRegions = new Dictionary<nuint, List< ( nuint Base, nuint Size, string Info ) >>();
 
         try
         {
@@ -830,112 +855,14 @@ partial class Plugin {
                 return finalResult;
             }
 
-            // Console.WriteLine($"[GetAllModulesFromMemMapFunc] DbgMemMap reported count: {nativeMemMap.count}"); // Optional
-
-            if ( nativeMemMap.page != IntPtr.Zero && nativeMemMap.count > 0 )
+            if ( nativeMemMap.page == IntPtr.Zero || nativeMemMap.count == 0 )
             {
-                int sizeOfMemPage = Marshal.SizeOf<MEMPAGE>();
-
-                // --- Pass 1: Collect all MEM_IMAGE regions grouped by AllocationBase ---
-                for ( int i = 0; i < nativeMemMap.count; i++ )
-                {
-                    IntPtr currentPagePtr = new IntPtr ( nativeMemMap.page.ToInt64() + ( long ) i * sizeOfMemPage );
-                    MEMPAGE memPage = Marshal.PtrToStructure<MEMPAGE> ( currentPagePtr );
-
-                    if ( ( memPage.mbi.Type & MEM_IMAGE ) == MEM_IMAGE )
-                    {
-                        nuint allocBase = ( nuint ) memPage.mbi.AllocationBase.ToInt64();
-                        nuint baseAddr = ( nuint ) memPage.mbi.BaseAddress.ToInt64();
-                        nuint regionSize = memPage.mbi.RegionSize;
-                        string infoString = memPage.info ?? string.Empty;
-
-                        if ( !allocationRegions.ContainsKey ( allocBase ) )
-                        {
-                            allocationRegions[allocBase] = new List< ( nuint Base, nuint Size, string Info ) >();
-                        }
-                        allocationRegions[allocBase].Add ( ( baseAddr, regionSize, infoString ) );
-                    }
-                }
-
-                // --- Pass 2: Process collected regions for each allocation base ---
-                foreach ( var kvp in allocationRegions )
-                {
-                    nuint allocBase = kvp.Key;
-                    var regions = kvp.Value;
-
-                    if ( regions.Count > 0 )
-                    {
-                        // Find the actual module name/path.
-                        string modulePath = "Unknown Module"; // Store the full path here
-                        var mainRegion = regions.FirstOrDefault ( r => r.Base == allocBase );
-
-                        if ( mainRegion.Info != null && !string.IsNullOrEmpty ( mainRegion.Info ) )
-                        {
-                            modulePath = mainRegion.Info;
-                        }
-                        else
-                        {
-                            var firstInfoRegion = regions.FirstOrDefault ( r => !string.IsNullOrEmpty ( r.Info ) );
-                            if ( firstInfoRegion.Info != null )
-                            {
-                                modulePath = firstInfoRegion.Info;
-                            }
-                            // If still no path, it remains "Unknown Module"
-                        }
-
-                        // Extract the file name for display
-                        string finalModuleName = System.IO.Path.GetFileName ( modulePath );
-                        if ( string.IsNullOrEmpty ( finalModuleName ) )
-                        {
-                            finalModuleName = modulePath; // Use path if filename extraction fails
-                            if ( string.IsNullOrEmpty ( finalModuleName ) ) // Final fallback
-                            {
-                                finalModuleName = $"Module@0x{allocBase:X16}";
-                                modulePath = finalModuleName; // Assign fallback to path too
-                            }
-                        }
-
-                        // --- Manual Min/Max Calculation ---
-                        nuint minRegionBase = regions[0].Base;
-                        nuint maxRegionEnd = regions[0].Base + regions[0].Size;
-                        for ( int i = 1; i < regions.Count; i++ )
-                        {
-                            if ( regions[i].Base < minRegionBase )
-                            {
-                                minRegionBase = regions[i].Base;
-                            }
-                            nuint currentEnd = regions[i].Base + regions[i].Size;
-                            if ( currentEnd > maxRegionEnd )
-                            {
-                                maxRegionEnd = currentEnd;
-                            }
-                        }
-                        // --- End Manual Min/Max ---
-
-                        nuint totalSize = maxRegionEnd - minRegionBase;
-
-                        // Add the aggregated module info, including the full path
-                        finalResult.Add ( ( finalModuleName, modulePath, allocBase, totalSize ) );
-
-                    } // End if (regions.Count > 0)
-                } // End Pass 2 Loop
-
-                // Sort the final list by base address
-                finalResult.Sort ( ( a, b ) =>
-                {
-                    if ( a.Base < b.Base )
-                    {
-                        return -1;
-                    }
-                    if ( a.Base > b.Base )
-                    {
-                        return 1;
-                    }
-                    return 0;
-                } );
-
+                return finalResult;
             }
-            // ... (rest of try block and error logging) ...
+
+            var allocationRegions = GetMemoryMapRegions(nativeMemMap);
+            finalResult = ProcessAllocationRegions(allocationRegions);
+            SortModulesByBaseAddress(finalResult);
         }
         catch ( Exception ex )
         {
@@ -952,6 +879,117 @@ partial class Plugin {
         return finalResult;
     }
 
+    private static Dictionary<nuint, List<(nuint Base, nuint Size, string Info)>> GetMemoryMapRegions(MEMMAP_NATIVE nativeMemMap)
+    {
+        var allocationRegions = new Dictionary<nuint, List<(nuint Base, nuint Size, string Info)>>();
+        int sizeOfMemPage = Marshal.SizeOf<MEMPAGE>();
+
+        for (int i = 0; i < nativeMemMap.count; i++)
+        {
+            IntPtr currentPagePtr = new IntPtr(nativeMemMap.page.ToInt64() + (long)i * sizeOfMemPage);
+            MEMPAGE memPage = Marshal.PtrToStructure<MEMPAGE>(currentPagePtr);
+
+            if ((memPage.mbi.Type & MEM_IMAGE) == MEM_IMAGE)
+            {
+                nuint allocBase = (nuint)memPage.mbi.AllocationBase.ToInt64();
+                nuint baseAddr = (nuint)memPage.mbi.BaseAddress.ToInt64();
+                nuint regionSize = memPage.mbi.RegionSize;
+                string infoString = memPage.info ?? string.Empty;
+
+                if (!allocationRegions.ContainsKey(allocBase))
+                {
+                    allocationRegions[allocBase] = new List<(nuint Base, nuint Size, string Info)>();
+                }
+                allocationRegions[allocBase].Add((baseAddr, regionSize, infoString));
+            }
+        }
+        return allocationRegions;
+    }
+
+    private static List<(string Name, string Path, nuint Base, nuint Size)> ProcessAllocationRegions(Dictionary<nuint, List<(nuint Base, nuint Size, string Info)>> allocationRegions)
+    {
+        var result = new List<(string Name, string Path, nuint Base, nuint Size)>();
+        foreach (var kvp in allocationRegions)
+        {
+            nuint allocBase = kvp.Key;
+            var regions = kvp.Value;
+
+            if (regions.Count > 0)
+            {
+                (string moduleName, string modulePath) = GetModuleNameAndPath(allocBase, regions);
+                nuint totalSize = CalculateModuleSize(regions);
+
+                result.Add((moduleName, modulePath, allocBase, totalSize));
+            }
+        }
+        return result;
+    }
+
+    private static (string moduleName, string modulePath) GetModuleNameAndPath(nuint allocBase, List<(nuint Base, nuint Size, string Info)> regions)
+    {
+        string modulePath = "Unknown Module";
+        var mainRegion = regions.FirstOrDefault(r => r.Base == allocBase);
+
+        if (mainRegion.Info != null && !string.IsNullOrEmpty(mainRegion.Info))
+        {
+            modulePath = mainRegion.Info;
+        }
+        else
+        {
+            var firstInfoRegion = regions.FirstOrDefault(r => !string.IsNullOrEmpty(r.Info));
+            if (firstInfoRegion.Info != null)
+            {
+                modulePath = firstInfoRegion.Info;
+            }
+        }
+
+        string finalModuleName = System.IO.Path.GetFileName(modulePath);
+        if (string.IsNullOrEmpty(finalModuleName))
+        {
+            finalModuleName = modulePath;
+            if (string.IsNullOrEmpty(finalModuleName))
+            {
+                finalModuleName = $"Module@0x{allocBase:X16}";
+                modulePath = finalModuleName;
+            }
+        }
+        return (finalModuleName, modulePath);
+    }
+
+    private static nuint CalculateModuleSize(List<(nuint Base, nuint Size, string Info)> regions)
+    {
+        nuint minRegionBase = regions[0].Base;
+        nuint maxRegionEnd = regions[0].Base + regions[0].Size;
+        for (int i = 1; i < regions.Count; i++)
+        {
+            if (regions[i].Base < minRegionBase)
+            {
+                minRegionBase = regions[i].Base;
+            }
+            nuint currentEnd = regions[i].Base + regions[i].Size;
+            if (currentEnd > maxRegionEnd)
+            {
+                maxRegionEnd = currentEnd;
+            }
+        }
+        return maxRegionEnd - minRegionBase;
+    }
+
+    private static void SortModulesByBaseAddress(List<(string Name, string Path, nuint Base, nuint Size)> modules)
+    {
+        modules.Sort((a, b) =>
+        {
+            if (a.Base < b.Base)
+            {
+                return -1;
+            }
+            if (a.Base > b.Base)
+            {
+                return 1;
+            }
+            return 0;
+        });
+    }
 
     [Command ( "GetAllModulesFromMemMap", DebugOnly = true, MCPOnly = true,
                MCPCmdDescription = "Example: GetAllModulesFromMemMap" )]
