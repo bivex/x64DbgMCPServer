@@ -22,44 +22,44 @@ partial class Plugin {
     //[Command("DotNetpluginTestCommand")]
     public static void cbNetTestCommand ( string[] args )
     {
-        Console.WriteLine ( ".Net test command!" );
+        Console.WriteLine ( "{0}", ".Net test command!" );
         string empty = string.Empty;
         string Left = Interaction.InputBox ( "Enter value pls", "NetTest", "", -1, -1 );
         if ( Left == null || Operators.CompareString ( Left, "", false ) == 0 )
-        { Console.WriteLine ( "cancel pressed!" ); }
+        { Console.WriteLine ( "{0}", "cancel pressed!" ); }
         else
-        { Console.WriteLine ( $"line: {Left}" ); }
+        { Console.WriteLine ( "{0}", $"line: {Left}" ); }
     }
 
     //[Command("DotNetDumpProcess", DebugOnly = true)]
     public static bool cbDumpProcessCommand ( string[] args )
     {
         var addr = args.Length >= 2 ? Bridge.DbgValFromString ( args[1] ) : Bridge.DbgValFromString ( "cip" );
-        Console.WriteLine ( $"addr: {addr.ToPtrString()}" );
+        Console.WriteLine ( "{0}", $"addr: {addr.ToPtrString()}" );
 
         Module.ModuleInfo modinfo;
         if ( !TryGetModuleInfo ( addr, out modinfo ) )
         {
-            Console.Error.WriteLine ( $"Module.InfoFromAddr failed for address {addr.ToPtrString()}..." );
+            Console.Error.WriteLine ( "{0}", $"Module.InfoFromAddr failed for address {addr.ToPtrString()}..." );
             return false;
         }
-        Console.WriteLine ( $"InfoFromAddr success, base: {modinfo.@base.ToPtrString()}" );
+        Console.WriteLine ( "{0}", $"InfoFromAddr success, base: {modinfo.@base.ToPtrString()}" );
 
         string fileName = ShowSaveFileDialogForModule ( modinfo.name );
         if ( string.IsNullOrEmpty ( fileName ) )
         {
-            Console.WriteLine ( "File save dialog cancelled." );
+            Console.WriteLine ( "{0}", "File save dialog cancelled." );
             return false;
         }
 
         nuint hProcess = Bridge.DbgValFromString ( "$hProcess" );
         if ( !PerformProcessDump ( hProcess, modinfo.@base, fileName, addr ) )
         {
-            Console.Error.WriteLine ( $"DumpProcess failed for module {modinfo.name}..." );
+            Console.Error.WriteLine ( "{0}", $"DumpProcess failed for module {modinfo.name}..." );
             return false;
         }
 
-        Console.WriteLine ( $"Dumping done!" );
+        Console.WriteLine ( "{0}", $"Dumping done!" );
         return true;
     }
 
@@ -103,9 +103,9 @@ partial class Plugin {
     {
         foreach ( var mod in Module.GetList() )
         {
-            Console.WriteLine ( $"{mod.@base.ToPtrString()} {mod.name}" );
+            Console.WriteLine ( "{0}", $"{mod.@base.ToPtrString()} {mod.name}" );
             foreach ( var section in Module.SectionListFromAddr ( mod.@base ) )
-            { Console.WriteLine ( $"    {section.addr.ToPtrString()} \"{section.name}\"" ); }
+            { Console.WriteLine ( "{0}", $"    {section.addr.ToPtrString()} \"{section.name}\"" ); }
         }
     }
 
@@ -117,20 +117,20 @@ partial class Plugin {
         // --- Check if already initialized ---
         if ( GSimpleMcpServer != null )
         {
-            Console.WriteLine ( "MCPServer instance already exists. Start command ignored." );
+            Console.WriteLine ( "{0}", "MCPServer instance already exists. Start command ignored." );
             return; // Don't create a new one
         }
-        Console.WriteLine ( "Starting MCPServer..." );
+        Console.WriteLine ( "{0}", "Starting MCPServer..." );
         try
         {
             // Create new instance and assign it to the static field
             GSimpleMcpServer = new SimpleMcpServer ( typeof ( DotNetPlugin.Plugin ) );
             GSimpleMcpServer.Start(); // Start the newly created server
-            Console.WriteLine ( "MCPServer Started." );
+            Console.WriteLine ( "{0}", "MCPServer Started." );
         }
         catch ( Exception ex )
         {
-            Console.WriteLine ( $"Failed to start MCPServer: {ex.Message}" );
+            Console.WriteLine ( "{0}", $"Failed to start MCPServer: {ex.Message}" );
             GSimpleMcpServer = null;
         }
     }
@@ -140,19 +140,19 @@ partial class Plugin {
     {
         if ( GSimpleMcpServer == null )
         {
-            Console.WriteLine ( "MCPServer instance not found (already stopped or never started). Stop command ignored." );
+            Console.WriteLine ( "{0}", "MCPServer instance not found (already stopped or never started). Stop command ignored." );
             return; // Nothing to stop
         }
-        Console.WriteLine ( "Stopping MCPServer..." );
+        Console.WriteLine ( "{0}", "Stopping MCPServer..." );
         try
         {
             GSimpleMcpServer.Stop();
             GSimpleMcpServer = null;
-            Console.WriteLine ( "MCPServer Stopped." );
+            Console.WriteLine ( "{0}", "MCPServer Stopped." );
         }
         catch ( Exception ex )
         {
-            Console.WriteLine ( $"Error stopping MCPServer: {ex.Message}" );
+            Console.WriteLine ( "{0}", $"Error stopping MCPServer: {ex.Message}" );
         }
     }
 
@@ -174,7 +174,7 @@ partial class Plugin {
                    "Example: ExecuteDebuggerCommand command=init c:\\Path\\To\\Program.exe\\r\\nNote: See ListDebuggerCommands for list of applicable commands. Once a program is loaded new available functions can be viewed from the tools/list" )]
     public static bool ExecuteDebuggerCommand ( string command )
     {
-        Console.WriteLine ( "Executing DebuggerCommand: " + command );
+        Console.WriteLine ( "{0}", "Executing DebuggerCommand: " + command );
         return DbgCmdExec ( command );
     }
 
@@ -210,12 +210,12 @@ partial class Plugin {
                MCPCmdDescription = "Example: DbgValFromString value=$pid" )]
     public static string DbgValFromString ( string value ) // = "$hProcess"
     {
-        Console.WriteLine ( "Executing DbgValFromString: " + value );
+        Console.WriteLine ( "{0}", "Executing DbgValFromString: " + value );
         return "0x" + Bridge.DbgValFromString ( value ).ToHexString();
     }
     public static nuint DbgValFromStringAsNUInt ( string value ) // = "$hProcess"
     {
-        Console.WriteLine ( "Executing DbgValFromString: " + value );
+        Console.WriteLine ( "{0}", "Executing DbgValFromString: " + value );
         return Bridge.DbgValFromString ( value );
     }
 
@@ -440,6 +440,7 @@ partial class Plugin {
             { return $"Error: Invalid address: {address}"; }
 
             nuint MyAddresses = ( nuint ) parsed;
+            Console.WriteLine ( "DEBUG: Parsed address: 0x{0:X}", MyAddresses );
 
             // Parse byte string (e.g., "90 89 78")
             string[] byteParts = byteString.Split ( new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries );
@@ -489,12 +490,12 @@ partial class Plugin {
             if ( string.Equals ( mode, "Label", StringComparison.OrdinalIgnoreCase ) )
             {
                 success = Bridge.DbgSetLabelAt ( MyAddresses, value );
-                Console.WriteLine ( $"Label '{value}' added at {MyAddresses:X} (byte pattern match)" );
+                Console.WriteLine ( "{0}", $"Label '{value}' added at {MyAddresses:X} (byte pattern match)" );
             }
             else if ( string.Equals ( mode, "Comment", StringComparison.OrdinalIgnoreCase ) )
             {
                 success = Bridge.DbgSetCommentAt ( MyAddresses, value );
-                Console.WriteLine ( $"Comment '{value}' added at {MyAddresses:X} (byte pattern match)" );
+                Console.WriteLine ( "{0}", $"Comment '{value}' added at {MyAddresses:X} (byte pattern match)" );
             }
             if ( success )
             {
@@ -838,7 +839,7 @@ partial class Plugin {
         if ( !ulong.TryParse ( addressStr.Replace ( "0x", "" ), NumberStyles.HexNumber, CultureInfo.InvariantCulture,
                                out ulong parsed ) )
         {
-            Console.WriteLine ( $"Invalid address: {addressStr}" );
+            Console.WriteLine ( "{0}", $"Invalid address: {addressStr}" );
             return false;
         }
 
@@ -850,11 +851,11 @@ partial class Plugin {
 
         if ( success )
         {
-            Console.WriteLine ( $"Successfully patched {nopCount} NOPs at 0x{address:X}" );
+            Console.WriteLine ( "{0}", $"Successfully patched {nopCount} NOPs at 0x{address:X}" );
         }
         else
         {
-            Console.WriteLine ( $"Failed to write memory at 0x{address:X}" );
+            Console.WriteLine ( "{0}", $"Failed to write memory at 0x{address:X}" );
         }
 
         return success;
@@ -967,8 +968,8 @@ partial class Plugin {
     {
         if ( args.Length < 2 )
         {
-            Console.WriteLine ( "Usage: LabelIfCallTargetMatches <address> <targetAddress> [labelOrComment] [mode: Label|Comment]" );
-            Console.WriteLine ( "Example: LabelIfCallTargetMatches 0x7FF600001000 0x7FF600002000 MyLabel Label" );
+            Console.WriteLine ( "{0}", "Usage: LabelIfCallTargetMatches <address> <targetAddress> [labelOrComment] [mode: Label|Comment]" );
+            Console.WriteLine ( "{0}", "Example: LabelIfCallTargetMatches 0x7FF600001000 0x7FF600002000 MyLabel Label" );
             return;
         }
 
@@ -1008,7 +1009,7 @@ partial class Plugin {
         }
         catch ( Exception ex )
         {
-            Console.WriteLine ( $"[LabelIfCallTargetMatches] Error: {ex.Message}" );
+            Console.WriteLine ( "{0}", $"[LabelIfCallTargetMatches] Error: {ex.Message}" );
         }
     }
     public static void LabelIfCallTargetMatches ( nuint address, ref Bridge.BASIC_INSTRUCTION_INFO disasm,
@@ -1019,12 +1020,12 @@ partial class Plugin {
             if ( string.Equals ( mode, "Label", StringComparison.OrdinalIgnoreCase ) )
             {
                 Bridge.DbgSetLabelAt ( address, value );
-                Console.WriteLine ( $"Label '{value}' added at {address:X}" );
+                Console.WriteLine ( "{0}", $"Label '{value}' added at {address:X}" );
             }
             else if ( string.Equals ( mode, "Comment", StringComparison.OrdinalIgnoreCase ) )
             {
                 Bridge.DbgSetCommentAt ( address, value );
-                Console.WriteLine ( $"Comment '{value}' added at {address:X}" );
+                Console.WriteLine ( "{0}", $"Comment '{value}' added at {address:X}" );
             }
         }
     }
@@ -1033,8 +1034,8 @@ partial class Plugin {
     {
         if ( args.Length < 2 )
         {
-            Console.WriteLine ( "Usage: LabelMatchingInstruction <address> <instruction> [labelOrComment] [mode: Label|Comment]" );
-            Console.WriteLine ( "Example: LabelMatchingInstruction 0x7FF600001000 \"jnz 0x140001501\" MyLabel Label" );
+            Console.WriteLine ( "{0}", "Usage: LabelMatchingInstruction <address> <instruction> [labelOrComment] [mode: Label|Comment]" );
+            Console.WriteLine ( "{0}", "Example: LabelMatchingInstruction 0x7FF600001000 \"jnz 0x140001501\" MyLabel Label" );
             return false;
         }
 
@@ -1068,7 +1069,7 @@ partial class Plugin {
         }
         catch ( Exception ex )
         {
-            Console.WriteLine ( $"[LabelMatchingInstruction] Error: {ex.Message}" );
+            Console.WriteLine ( "{0}", $"[LabelMatchingInstruction] Error: {ex.Message}" );
             return false;
         }
     }
@@ -1080,12 +1081,12 @@ partial class Plugin {
             if ( string.Equals ( mode, "Label", StringComparison.OrdinalIgnoreCase ) )
             {
                 Bridge.DbgSetLabelAt ( address, value );
-                Console.WriteLine ( $"Label 'test' added at {address:X}" );
+                Console.WriteLine ( "{0}", $"Label 'test' added at {address:X}" );
             }
             else if ( string.Equals ( mode, "Comment", StringComparison.OrdinalIgnoreCase ) )
             {
                 Bridge.DbgSetCommentAt ( address, value );
-                Console.WriteLine ( $"Comment 'test' added at {address:X}" );
+                Console.WriteLine ( "{0}", $"Comment 'test' added at {address:X}" );
             }
         }
     }
@@ -1094,8 +1095,8 @@ partial class Plugin {
     {
         if ( args.Length < 2 )
         {
-            Console.WriteLine ( "Usage: LabelMatchingBytes <address> <byte1> <byte2> ... [labelOrComment] [mode: Label|Comment]" );
-            Console.WriteLine ( "Example: LabelMatchingBytes 0x7FF600001000 48 8B 05 MyLabel Label" );
+            Console.WriteLine ( "{0}", "Usage: LabelMatchingBytes <address> <byte1> <byte2> ... [labelOrComment] [mode: Label|Comment]" );
+            Console.WriteLine ( "{0}", "Example: LabelMatchingBytes 0x7FF600001000 48 8B 05 MyLabel Label" );
             return;
         }
 
@@ -1123,16 +1124,9 @@ partial class Plugin {
                                   || lastArg.Equals ( "Comment", StringComparison.OrdinalIgnoreCase );
 
                 if ( lastIsMode )
-                {
-                    mode = lastArg;
-                    value = secondLastArg;
-                    byteCount -= 2;
-                }
+                { mode = lastArg; value = secondLastArg; byteCount -= 2; }
                 else
-                {
-                    value = lastArg;
-                    byteCount -= 1;
-                }
+                { value = lastArg; byteCount -= 1; }
             }
 
             // Parse bytes
@@ -1148,7 +1142,7 @@ partial class Plugin {
         }
         catch ( Exception ex )
         {
-            Console.WriteLine ( $"[LabelMatchingBytes] Error: {ex.Message}" );
+            Console.WriteLine ( "{0}", $"[LabelMatchingBytes] Error: {ex.Message}" );
         }
     }
 
@@ -1175,12 +1169,12 @@ partial class Plugin {
             if ( string.Equals ( mode, "Label", StringComparison.OrdinalIgnoreCase ) )
             {
                 Bridge.DbgSetLabelAt ( address, value );
-                Console.WriteLine ( $"Label '{value}' added at {address:X} (byte pattern match)" );
+                Console.WriteLine ( "{0}", $"Label '{value}' added at {address:X} (byte pattern match)" );
             }
             else if ( string.Equals ( mode, "Comment", StringComparison.OrdinalIgnoreCase ) )
             {
                 Bridge.DbgSetCommentAt ( address, value );
-                Console.WriteLine ( $"Comment '{value}' added at {address:X} (byte pattern match)" );
+                Console.WriteLine ( "{0}", $"Comment '{value}' added at {address:X} (byte pattern match)" );
             }
         }
         catch
@@ -1199,7 +1193,7 @@ partial class Plugin {
         {
             if ( !DbgMemMap ( ref nativeMemMap ) )
             {
-                Console.WriteLine ( "[GetAllModulesFromMemMapFunc] DbgMemMap call failed." );
+                Console.WriteLine ( "{0}", "[GetAllModulesFromMemMapFunc] DbgMemMap call failed." );
                 return finalResult;
             }
 
@@ -1214,7 +1208,7 @@ partial class Plugin {
         }
         catch ( Exception ex )
         {
-            Console.WriteLine ( $"[GetAllModulesFromMemMapFunc] Exception: {ex.Message}\n{ex.StackTrace}" );
+            Console.WriteLine ( "{0}", $"[GetAllModulesFromMemMapFunc] Exception: {ex.Message}\n{ex.StackTrace}" );
             throw;
         }
         finally

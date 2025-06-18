@@ -40,7 +40,7 @@ namespace DotNetPlugin.Mcp
         {
             if (_outputPluginDebugInformation())
             {
-                Console.WriteLine($"RPC Call | Session: {sessionId}, ID: {rpcId}, Method: {method}");
+                Console.WriteLine("RPC Call | Session: {0}, ID: {1}, Method: {2}", sessionId, rpcId, method);
             }
         }
 
@@ -66,7 +66,7 @@ namespace DotNetPlugin.Mcp
                 if (!json.TryGetValue("method", out object methodObj) || !(methodObj is string) || string.IsNullOrWhiteSpace((string)methodObj))
                 {
                     var errorMsg = "Invalid JSON RPC: Missing or invalid 'method'.";
-                    Console.WriteLine($"Error processing request for session {sessionId}: {errorMsg}");
+                    Console.WriteLine("Error processing request for session {0}: {1}", sessionId, errorMsg);
                     if (rpcId != null)
                     {
                         _sendSseError(sessionId, rpcId, -32600, errorMsg, null);
@@ -79,12 +79,12 @@ namespace DotNetPlugin.Mcp
             }
             catch (JsonException jsonEx)
             {
-                Console.WriteLine($"JSON Error processing request for session {sessionId}: {jsonEx.Message}");
+                Console.WriteLine("JSON Error processing request for session {0}: {1}", sessionId, jsonEx.Message);
                 _sendSseError(sessionId, rpcId, -32700, $"Parse error: Invalid JSON received. ({jsonEx.Message})", null);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error processing method '{method ?? "unknown"}' for session {sessionId}: {ex}");
+                Console.WriteLine("Error processing method '{0}' for session {1}: {2}", method ?? "unknown", sessionId, ex);
                 _sendSseError(sessionId, rpcId, -32603, $"Internal error processing method '{method ?? "unknown"}': {ex.Message}", null);
             }
         }
@@ -105,7 +105,7 @@ namespace DotNetPlugin.Mcp
                 case "notifications/initialized":
                     if (_outputPluginDebugInformation())
                     {
-                        Console.WriteLine($"Notification 'initialized' received for session {sessionId}.");
+                        Console.WriteLine("Notification 'initialized' received for session {0}.", sessionId);
                     }
                     break;
                 case "tools/call":
@@ -122,7 +122,7 @@ namespace DotNetPlugin.Mcp
                     break;
                 default:
                     // Assuming _commands is now handled externally or via _commandDispatcher directly
-                    Console.WriteLine($"Unknown method '{method}' received for session {sessionId}");
+                    Console.WriteLine("Unknown method '{0}' received for session {1}", method, sessionId);
                     _sendSseError(sessionId, rpcId, -32601, $"Method not found: {method}", null);
                     break;
             }
@@ -184,8 +184,8 @@ namespace DotNetPlugin.Mcp
 
                 if (_outputPluginDebugInformation())
                 {
-                    Console.WriteLine(
-                        $"Tool Call: {toolName} with args: {(arguments.Count > 0 ? _jsonSerializer.Serialize(arguments) : "None")}");
+                    var serializedArgs = arguments.Count > 0 ? _jsonSerializer.Serialize(arguments) : "None";
+                    Console.WriteLine("Tool Call: {0} with args: {1}", toolName, serializedArgs);
                 }
 
                 var result = _commandDispatcher.HandleToolCall(toolName, arguments, _isActivelyDebugging());
@@ -214,7 +214,7 @@ namespace DotNetPlugin.Mcp
         {
             if (_outputPluginDebugInformation())
             {
-                Console.WriteLine($"Handling prompts/list for session {sessionId}");
+                Console.WriteLine("Handling prompts/list for session {0}", sessionId);
             }
             var promptsList = new List<PromptInfo>();
             try
@@ -229,7 +229,7 @@ namespace DotNetPlugin.Mcp
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error handling prompts/list for session {sessionId}: {ex}");
+                Console.WriteLine("Error handling prompts/list for session {0}: {1}", sessionId, ex);
                 _sendSseError(sessionId, id, -32603, $"Internal error handling prompts/list: {ex.Message}", null);
             }
         }
@@ -265,12 +265,14 @@ namespace DotNetPlugin.Mcp
             catch (ArgumentException argEx)
             {
                 Console.WriteLine(
-                    $"Argument Error handling prompts/get for '{promptName ?? "unknown"}' (Session: {sessionId}): {argEx.Message}");
+                    "Argument Error handling prompts/get for '{0}' (Session: {1}): {2}",
+                    promptName ?? "unknown", sessionId, argEx.Message);
                 _sendSseError(sessionId, id, -32602, $"Invalid parameters: {argEx.Message}", null);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error handling prompts/get for '{promptName ?? "unknown"}' (Session: {sessionId}): {ex}");
+                Console.WriteLine("Error handling prompts/get for '{0}' (Session: {1}): {2}",
+                    promptName ?? "unknown", sessionId, ex);
                 _sendSseError(sessionId, id, -32603, $"Internal error processing prompt '{promptName ?? "unknown"}': {ex.Message}", null);
             }
         }
@@ -302,7 +304,9 @@ namespace DotNetPlugin.Mcp
             if (_outputPluginDebugInformation())
             {
                 Console.WriteLine(
-                    $"Handling prompts/get: {promptName} with args: {(arguments.Count > 0 ? _jsonSerializer.Serialize(arguments) : "None")}");
+                    "Handling prompts/get: {0} with args: {1}",
+                    promptName,
+                    (arguments.Count > 0 ? _jsonSerializer.Serialize(arguments) : "None"));
             }
             return (promptName, arguments);
         }
@@ -397,7 +401,7 @@ namespace DotNetPlugin.Mcp
         {
             if (_outputPluginDebugInformation())
             {
-                Console.WriteLine($"Handling resources/list for session {sessionId}");
+                Console.WriteLine("Handling resources/list for session {0}", sessionId);
             }
             var resourcesList = new List<object>();
 
@@ -424,7 +428,7 @@ namespace DotNetPlugin.Mcp
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error handling resources/list for session {sessionId}: {ex}");
+                Console.WriteLine("Error handling resources/list for session {0}: {1}", sessionId, ex);
                 _sendSseError(sessionId, id, -32603, $"Internal error handling resources/list: {ex.Message}", null);
             }
         }
